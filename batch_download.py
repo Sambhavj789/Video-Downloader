@@ -10,6 +10,9 @@ TRACKER_FILE = WORK_DIR / "batch_progress.json"
 TOKEN_FILE = WORK_DIR / "token.txt"
 COOKIES_FILE = WORK_DIR / "stream_cookies.json"
 
+# Fallback schedule ID to bootstrap PW_HEADERS refresh when token expires
+SEED_SCHEDULE_ID = "6980a63931cbfcd747c58fc6"
+
 def fmt_bytes(b):
     if b < 1024 * 1024:
         return f"{b/1024:.1f} KB"
@@ -50,6 +53,21 @@ async def call_video_api(cf_session, cookies, media_token):
     api_headers = {**STREAM_HEADERS, "Accept": "application/json, text/plain, */*"}
     resp = await cf_session.get(url, headers=api_headers, cookies=cookies)
     return resp.status_code, resp.json()
+
+async def refresh_pw_headers(cf_session, cookies, params, seed_id):
+    url = f"https://stream.testuk.org/schedule-details?batchId={params['batchId']}&subjectId={params['subjectId']}&scheduleId={seed_id}&tap=video"
+    resp = await cf_session.get(url, headers=STREAM_HEADERS, cookies=cookies)
+    if resp.status_code != 200:
+        return None
+    m = re.search(r'PW_HEADERS\s*=\s*({.*?});', resp.text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        pw = json.loads(m.group(1))
+        (WORK_DIR / "pw_headers.json").write_text(json.dumps(pw, indent=2), "utf-8")
+        return pw
+    except:
+        return None
 
 async def main():
     print("=" * 60)
@@ -101,39 +119,71 @@ async def main():
     print(f"\n  Subject: {subject_name}")
 
     connector = aiohttp.TCPConnector(limit=10)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        chapters = []
-        p = 1
-        while True:
-            async with session.get(
-                f"https://api.penpencil.co/v2/batches/{params['batchId']}/subject/{params['subjectId']}/topics?page={p}",
-                headers=pw_hdr, timeout=aiohttp.ClientTimeout(total=30)
-            ) as r:
-                data = await r.json()
-            if not data.get("success") or not data.get("data"):
-                break
-            chapters.extend(data["data"])
-            if len(data["data"]) < 10:
-                break
-            p += 1
+    async with AsyncSession(impersonate="chrome124") as cf_session:
+        # Try to refresh PW_HEADERS from stream.testuk.org (handles expired tokens)
+        if cookies:
+            fresh = await refresh_pw_headers(cf_session, cookies, params, SEED_SCHEDULE_ID)
+            if fresh:
+                pw_hdr = fresh
+                print("  PW_HEADERS refreshed from stream.testuk.org")
+            elif pw_hdr:
+                print("  PW_HEADERS refresh skipped, using saved headers")
+            else:
+                print("  ERROR: No valid PW_HEADERS available")
+                sys.exit(1)
 
-        if not chapters:
-            print("  No chapters found")
-            return
+        async with aiohttp.ClientSession(connector=connector) as session:
+            chapters = []
+            p = 1
+            while True:
+                async with session.get(
+                    f"https://api.penpencil.co/v2/batches/{params['batchId']}/subject/{params['subjectId']}/topics?page={p}",
+                    headers=pw_hdr, timeout=aiohttp.ClientTimeout(total=30)
+                ) as r:
+                    data = await r.json()
+                if not data.get("success") or not data.get("data"):
+                    break
+                chapters.extend(data["data"])
+                if len(data["data"]) < 10:
+                    break
+                p += 1
 
-        print(f"\n  Found {len(chapters)} chapters")
+            if not chapters:
+                # Retry with fresh PW_HEADERS (in case saved token was stale)
+                print("  No chapters found, attempting token refresh...")
+                fresh2 = await refresh_pw_headers(cf_session, cookies, params, SEED_SCHEDULE_ID)
+                if fresh2:
+                    pw_hdr = fresh2
+                    print("  Retrying chapters API with fresh headers...")
+                    p = 1
+                    while True:
+                        async with session.get(
+                            f"https://api.penpencil.co/v2/batches/{params['batchId']}/subject/{params['subjectId']}/topics?page={p}",
+                            headers=pw_hdr, timeout=aiohttp.ClientTimeout(total=30)
+                        ) as r:
+                            data = await r.json()
+                        if not data.get("success") or not data.get("data"):
+                            break
+                        chapters.extend(data["data"])
+                        if len(data["data"]) < 10:
+                            break
+                        p += 1
 
-        tracker = load_tracker()
-        if tracker.get("url") != page_url:
-            tracker = {"url": page_url, "chapters_done": [], "videos_done": []}
-            save_tracker(tracker)
+            if not chapters:
+                print("  No chapters found")
+                return
 
-        chapters_done = set(tracker.get("chapters_done", []))
-        videos_done_global = set(tracker.get("videos_done", []))
+            print(f"\n  Found {len(chapters)} chapters")
 
-        total_vids = total_dl = total_skip = total_fail = total_bytes = 0
+            tracker = load_tracker()
+            if tracker.get("url") != page_url:
+                tracker = {"url": page_url, "chapters_done": [], "videos_done": []}
+                save_tracker(tracker)
 
-        async with AsyncSession(impersonate="chrome124") as cf_session:
+            chapters_done = set(tracker.get("chapters_done", []))
+            videos_done_global = set(tracker.get("videos_done", []))
+
+            total_vids = total_dl = total_skip = total_fail = total_bytes = 0
             for ci, ch in enumerate(chapters, 1):
                 ch_name = sanitize(ch.get("name", f"Chapter_{ci}"))
                 ch_dir = OUTPUT_DIR / ch_name
