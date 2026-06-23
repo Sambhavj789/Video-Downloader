@@ -1,0 +1,12 @@
+output/
+_batch_temp/
+_segments/
+__pycache__/
+*.pyc
+*.pyo
+*.manifest
+*.mp4
+*.html
+batch_progress.json
+batch_link.txt
+link.txt
