@@ -310,44 +310,57 @@ async def download_video(media_page_url, output_path, temp_dir, pw_headers=None,
             m["seg_pattern"] = f"{prefix}_$Number$.mp4"
 
         total = len(dl_items)
-        connector = aiohttp.TCPConnector(limit=5)
-        downloaded = 0
-        failures = 0
-        downloaded_bytes = 0
+        dl_queue = asyncio.Queue()
+        for u, p in dl_items:
+            await dl_queue.put((u, p))
 
-        async with aiohttp.ClientSession(connector=connector) as session:
-            sem = asyncio.Semaphore(5)
-            async def limited_dl(url, path):
-                nonlocal downloaded_bytes
-                async with sem:
-                    for attempt in range(8):
-                        try:
-                            async with session.get(url, headers=pw_headers, timeout=aiohttp.ClientTimeout(total=120)) as resp:
-                                if resp.status != 200:
-                                    if attempt < 7:
-                                        await asyncio.sleep(1 * (2 ** attempt))
-                                        continue
-                                    return False
-                                data = await resp.read()
-                                path.write_bytes(data)
-                                downloaded_bytes += len(data)
-                                return True
-                        except Exception:
-                            if attempt < 7:
-                                await asyncio.sleep(1 * (2 ** attempt))
-                            continue
-                    return False
-            tasks = [asyncio.ensure_future(limited_dl(u, p)) for u, p in dl_items]
-            for coro in asyncio.as_completed(tasks):
-                ok = await coro
-                if not ok:
-                    failures += 1
-                downloaded += 1
-                if downloaded % 100 == 0 or downloaded == total:
-                    mb = downloaded_bytes / (1024 * 1024)
-                    print(f"{indent}  Segments: {downloaded}/{total} ({mb:.1f} MB, {failures} bad)".ljust(80), end="\r")
-            mb = downloaded_bytes / (1024 * 1024)
-            print(f"{indent}  Segments: {total}/{total} ({mb:.1f} MB, {failures} bad)".ljust(80))
+        result_queue = asyncio.Queue()
+
+        async def curl_worker():
+            while True:
+                item = await dl_queue.get()
+                if item is None:
+                    dl_queue.task_done()
+                    return
+                url, path = item
+                ok = False
+                for attempt in range(5):
+                    try:
+                        proc = await asyncio.create_subprocess_exec(
+                            "curl.exe", "-s", "-o", str(path),
+                            "--connect-timeout", "15",
+                            "--max-time", "60",
+                            "-w", "%{http_code}",
+                            url,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.DEVNULL)
+                        stdout, _ = await proc.communicate()
+                        if proc.returncode == 0 and stdout:
+                            code = int(stdout.decode().strip())
+                            if code == 200:
+                                ok = True
+                                break
+                    except:
+                        pass
+                    if attempt < 4:
+                        await asyncio.sleep(min(10, 2 ** attempt))
+                await result_queue.put(ok)
+                dl_queue.task_done()
+
+        workers = [asyncio.create_task(curl_worker()) for _ in range(3)]
+        for _ in range(3):
+            await dl_queue.put(None)
+
+        completed = 0
+        failures = 0
+        while completed < total:
+            ok = await result_queue.get()
+            if not ok:
+                failures += 1
+            completed += 1
+            if completed % 50 == 0 or completed == total:
+                print(f"{indent}  Segments: {completed}/{total} ({failures} bad)".ljust(80), end="\r")
+        print(f"{indent}  Segments: {total}/{total} ({failures} bad)".ljust(80))
 
         if failures > total * 0.5:
             print(f"{indent}  Too many failures ({failures}/{total}), skipping")

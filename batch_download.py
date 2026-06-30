@@ -1,4 +1,4 @@
-import asyncio, json, re, sys, os, shutil, aiohttp, base64
+import asyncio, json, re, sys, os, shutil, aiohttp, base64, hashlib
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs, urlencode
 from curl_cffi.requests import AsyncSession
@@ -273,7 +273,8 @@ async def main():
                         print(f"      Error: {e}")
                         ch_fail += 1; total_fail += 1; continue
 
-                    temp_dir = TEMP_BASE / f"{ch_name}_{vname_safe}"
+                    temp_suffix = hashlib.md5(f"{ch_name}_{vname_safe}".encode()).hexdigest()[:12]
+                    temp_dir = TEMP_BASE / temp_suffix
                     from core_download import download_video
                     ok = await download_video(None, out_file, temp_dir, pw_headers=pw_hdr, progress_prefix="    ", video_data_override=vd)
 
