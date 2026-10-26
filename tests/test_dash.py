@@ -53,9 +53,14 @@ def test_split_mpd_url_decodes_the_base_and_keeps_auth():
     assert parse_qs(auth)["Policy"] == ["eyJ4IjoxfQ=="]
 
 
-def test_split_mpd_url_without_prefix_returns_empty_base():
+def test_split_mpd_url_without_prefix_uses_the_mpd_folder():
+    """New CDN sends relative segment paths and no URLPrefix."""
+    base, auth = dash.split_mpd_url("https://cdn.example/stream/abc123/master.mpd")
+    assert base == "https://cdn.example/stream/abc123/"
+    assert auth == ""
+
     base, auth = dash.split_mpd_url("https://cdn.example/x.mpd?Policy=p")
-    assert base == ""
+    assert base == "https://cdn.example/"
     assert parse_qs(auth) == {"Policy": ["p"]}
 
 
@@ -105,6 +110,21 @@ def test_segment_urls_carry_auth_and_are_numbered():
     assert "Policy=" in items[0][0]
     assert items[1] == (items[1][0], "720p_1.mp4")
     assert len(items) == 151
+
+
+def test_relative_segment_paths_resolve_against_the_mpd_folder():
+    """streamvideo.co.in manifest: no URLPrefix, segments like ``dash/720/1.mp4``."""
+    relative = MANIFEST.replace('initialization="v_init.mp4"', 'initialization="dash/720/init.mp4"') \
+                       .replace('media="v_$Number$.mp4"', 'media="dash/720/$Number$.mp4"') \
+                       .replace('initialization="a_init.mp4"', 'initialization="dash/audio/init.mp4"') \
+                       .replace('media="a_$Number$.mp4"', 'media="dash/audio/$Number$.mp4"')
+    url = "https://cdn.example/stream/abc123/master.mpd"
+    manifest = dash.parse_manifest(relative, url)
+    video, _ = dash.choose_tracks(manifest)
+    items = dash.segment_urls(manifest, video)
+    assert manifest.base_url == "https://cdn.example/stream/abc123/"
+    assert items[0][0] == "https://cdn.example/stream/abc123/dash/720/init.mp4"
+    assert items[1][0] == "https://cdn.example/stream/abc123/dash/720/1.mp4"
 
 
 def test_build_local_mpd_points_at_local_files(tmp_path: Path):

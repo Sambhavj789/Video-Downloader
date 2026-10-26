@@ -102,17 +102,26 @@ class Result:
 
 
 def split_mpd_url(mpd_url: str) -> tuple[str, str]:
-    """``URLPrefix`` is base64 of the CDN base; everything else is the auth query."""
+    """Base URL for the segments, plus the auth query that must ride along.
+
+    Two shapes exist in the wild:
+
+    * old PenPencil MPDs: ``?URLPrefix=<base64 cdn base>&Policy=…`` — the base is in the
+      query and the rest is the signed auth string;
+    * new ``streamvideo.co.in`` MPDs: no query at all and relative segment paths
+      (``dash/720/$Number$.mp4``), so the base is simply the MPD's own folder.
+    """
     parsed = urlparse(mpd_url)
     query = parse_qs(parsed.query)
+    auth = {k: v[0] for k, v in query.items() if k != "URLPrefix"}
     raw = query.get("URLPrefix", [""])[0]
     if not raw:
-        return "", urlencode(query, doseq=True)
+        folder = parsed._replace(query="", fragment="").geturl().rsplit("/", 1)[0]
+        return (folder + "/" if folder else ""), urlencode(auth)
     padding = "=" * (-len(raw) % 4)
     import base64
 
     base = base64.b64decode(raw + padding).decode("utf-8").rstrip("/") + "/"
-    auth = {k: v[0] for k, v in query.items() if k != "URLPrefix"}
     return base, urlencode(auth)
 
 
@@ -155,6 +164,8 @@ def parse_manifest(xml_text: str, mpd_url: str) -> Manifest:
 
     if not any(t.kind == "video" for t in tracks):
         raise DashError("MPD me video track nahi mila")
+    if not base and any(not t.init.startswith(("http://", "https://")) for t in tracks):
+        raise DashError("MPD ne base URL nahi diya (URLPrefix/BaseURL dono missing)")
     return Manifest(
         base_url=base,
         auth_query=auth,
@@ -239,10 +250,19 @@ def build_local_mpd(manifest: Manifest, video: Track, audio: Track, temp_dir: Pa
 def segment_urls(manifest: Manifest, track: Track) -> list[tuple[str, str]]:
     """``[(url, local file name)]`` for init + every segment of one track."""
     suffix = f"?{manifest.auth_query}" if manifest.auth_query else ""
-    items = [(f"{manifest.base_url}{track.init}{suffix}", f"{track.label}_init.mp4")]
+    base = manifest.base_url or ""
+
+    def join(relative: str) -> str:
+        if relative.startswith(("http://", "https://")):
+            return relative
+        return f"{base}{relative}"
+
+    items = [(join(track.init) + (suffix if not track.init.startswith("http") else ""),
+              f"{track.label}_init.mp4")]
     for number in range(1, track.count + 1):
         segment = track.media.replace("$Number$", str(number))
-        items.append((f"{manifest.base_url}{segment}{suffix}", f"{track.label}_{number}.mp4"))
+        items.append((join(segment) + (suffix if not segment.startswith("http") else ""),
+                      f"{track.label}_{number}.mp4"))
     return items
 
 
