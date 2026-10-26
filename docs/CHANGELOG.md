@@ -14,6 +14,10 @@ Newest first. One line per user-visible change.
   segment were fetched with a library user agent, which Cloudflare rejects. Manifest,
   `curl.exe` segments and the `aiohttp` fallback now all send the browser headers
   (`User-Agent` / `Origin` / `Referer`) — see `dash.CDN_HEADERS`.
+- New `streamvideo.co.in` manifests carry **no `URLPrefix`** and use relative segment paths
+  (`dash/720/$Number$.mp4`); `split_mpd_url` now falls back to the MPD's own folder, which is
+  what the DASH spec says. Before this, every segment URL was a bare relative string and the
+  whole video "completed" with zero bytes written.
 - Long note names (>260 characters once inside `Notes\`) no longer fail with
   `FileNotFoundError`: every write/stat goes through `names.fs_path` (`\\?\` prefix) and
   `names.stat_size`. Six new tests in `tests/test_names.py` / `tests/test_dash.py`.
