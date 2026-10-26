@@ -44,7 +44,7 @@ class Settings:
     """User-facing knobs. Persisted in ``config/settings.json``."""
 
     output_root: str = ""
-    concurrency: int = 3          # parallel segment downloads per video
+    concurrency: int = 12         # parallel segment downloads per video (16+ nahi tez)
     video_workers: int = 1        # videos downloaded at the same time
     retries: int = 4              # attempts per segment / per file
     fetch_workers: int = 2        # parallel schedule-page requests (higher = HTTP 429)

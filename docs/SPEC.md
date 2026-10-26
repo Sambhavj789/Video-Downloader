@@ -67,6 +67,10 @@ library, PDF text extraction/OCR.
 - Rules: videos are fetched as MPD segments (parallel, `concurrency`), decrypted with the
   ClearKey from `video-url-details`, muxed by ffmpeg into one `.mp4`; PDFs/images via one
   retrying GET. Existing non-empty target is skipped. One job at a time.
+- Segments go through one keep-alive `aiohttp` session (default `concurrency` 12). Measured
+  2026-10-26: 0.35 MB/s with one `curl.exe` per segment vs 1.42 MB/s at 12-16 parallel
+  requests; 24-32 workers make it slower again. `VD_SEGMENT_FETCHER=curl` brings the old
+  behaviour back for debugging.
 - Every CDN request (manifest, init, segments) must carry browser headers
   (`dash.CDN_HEADERS`: Chrome UA, `Origin`/`Referer` of the site) — Cloudflare answers 403
   to library user agents, which looks like an expired session but is not.

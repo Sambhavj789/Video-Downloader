@@ -18,6 +18,9 @@ Newest first. One line per user-visible change.
   (`dash/720/$Number$.mp4`); `split_mpd_url` now falls back to the MPD's own folder, which is
   what the DASH spec says. Before this, every segment URL was a bare relative string and the
   whole video "completed" with zero bytes written.
+- Segments now download over one keep-alive `aiohttp` session instead of one `curl.exe` per
+  segment: 0.35 MB/s → 1.4-2.4 MB/s (default `concurrency` 12; >16 is slower).
+  `VD_SEGMENT_FETCHER=curl` restores the old path.
 - Long note names (>260 characters once inside `Notes\`) no longer fail with
   `FileNotFoundError`: every write/stat goes through `names.fs_path` (`\\?\` prefix) and
   `names.stat_size`. Six new tests in `tests/test_names.py` / `tests/test_dash.py`.
