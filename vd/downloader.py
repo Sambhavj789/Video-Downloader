@@ -30,13 +30,15 @@ def _never_stop() -> bool:
 
 class DownloadRunner:
     def __init__(self, settings, cookies: dict, record: dict, *,
-                 on_event: EventFn | None = None, should_stop: StopFn | None = None):
+                 on_event: EventFn | None = None, should_stop: StopFn | None = None,
+                 quota_file: Path | None = None):
         self.settings = settings
         self.cookies = cookies
         self.record = record
         self.key = record.get("key", "")
         self.on_event = on_event or (lambda event: None)
         self.should_stop = should_stop or _never_stop
+        self.quota_file = Path(quota_file) if quota_file else QUOTA_FILE
         self.started = time.time()
         self.bytes_done = 0
         self.failed = 0
@@ -59,7 +61,7 @@ class DownloadRunner:
     def _load_window(self) -> None:
         """A restarted run must still know how much of the hour is already spent."""
         try:
-            saved = json.loads(QUOTA_FILE.read_text(encoding="utf-8"))
+            saved = json.loads(self.quota_file.read_text(encoding="utf-8"))
             self.video_times.extend(float(value) for value in saved)
         except (OSError, ValueError, TypeError):
             pass
@@ -67,8 +69,8 @@ class DownloadRunner:
 
     def _save_window(self) -> None:
         try:
-            QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
-            QUOTA_FILE.write_text(json.dumps(list(self.video_times)), encoding="utf-8")
+            self.quota_file.parent.mkdir(parents=True, exist_ok=True)
+            self.quota_file.write_text(json.dumps(list(self.video_times)), encoding="utf-8")
         except OSError:
             pass
 

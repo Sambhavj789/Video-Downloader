@@ -11,7 +11,7 @@ from vd.downloader import DownloadRunner
 
 def _runner(tmp_path, per_hour=18):
     settings = Settings(output_root=str(tmp_path), videos_per_hour=per_hour)
-    return DownloadRunner(settings, {}, {"key": "k"})
+    return DownloadRunner(settings, {}, {"key": "k"}, quota_file=tmp_path / "quota.json")
 
 
 def test_hourly_quota_makes_the_runner_wait(tmp_path):
@@ -52,3 +52,17 @@ def test_old_requests_fall_out_of_the_window(tmp_path):
 
     runner._sleep = boom
     asyncio.run(runner.wait_for_video_slot())
+
+def test_saved_window_survives_a_restart(tmp_path):
+    """The quota file is what stops a restarted run from burning the hour again."""
+    import json
+
+    quota = tmp_path / "quota.json"
+    quota.write_text(json.dumps([time.time()] * 3), encoding="utf-8")
+    settings = Settings(output_root=str(tmp_path), videos_per_hour=18)
+    runner = DownloadRunner(settings, {}, {"key": "k"}, quota_file=quota)
+    assert len(runner.video_times) == 3
+
+    runner.video_times.append(time.time())
+    runner._save_window()
+    assert len(json.loads(quota.read_text(encoding="utf-8"))) == 4
