@@ -220,3 +220,11 @@ def test_failed_mux_removes_the_part_file(tmp_path, monkeypatch):
     assert ok is False and "ffmpeg fail" in error and size == 0
     assert not target.exists()
     assert not (tmp_path / "lecture.mp4.part").exists()
+
+def test_ffmpeg_command_names_the_muxer_for_part_files(tmp_path):
+    """`.part` has no known extension: without `-f mp4` ffmpeg refuses ("Invalid argument")."""
+    command = dash._ffmpeg_command(tmp_path / "local.mpd", tmp_path / "v.mp4.part", "kid:key")
+    assert "-f" in command
+    assert command[command.index("-f") + 1] == "mp4"
+    assert "-cenc_decryption_key" in command
+    assert command[-1].endswith("v.mp4.part")

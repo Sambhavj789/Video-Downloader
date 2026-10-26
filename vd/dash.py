@@ -379,11 +379,23 @@ async def _download_segments(items: list[tuple[str, str]], temp_dir: Path, *,
     return state["failed"], state["bytes"]
 
 
-def _run_ffmpeg(local_mpd: Path, out_path: Path, key: str | None) -> tuple[int, str]:
+def _ffmpeg_command(local_mpd: Path, out_path: Path, key: str | None) -> list[str]:
+    """``-f mp4`` is explicit: the temp file ends in ``.part``, so ffmpeg cannot guess the muxer."""
     command = [ffmpeg_exe()]
     if key:
         command += ["-cenc_decryption_key", key]
-    command += ["-i", str(local_mpd), "-c", "copy", "-movflags", "+faststart", "-y", str(out_path)]
+    command += [
+        "-i", str(local_mpd),
+        "-c", "copy",
+        "-movflags", "+faststart",
+        "-f", "mp4",
+        "-y", str(out_path),
+    ]
+    return command
+
+
+def _run_ffmpeg(local_mpd: Path, out_path: Path, key: str | None) -> tuple[int, str]:
+    command = _ffmpeg_command(local_mpd, out_path, key)
     sys.stdout.flush()
     completed = subprocess.run(command, capture_output=True, text=True, errors="replace")
     detail = (completed.stderr or "").strip().splitlines()

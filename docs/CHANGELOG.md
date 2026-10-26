@@ -89,3 +89,10 @@ Newest first. One line per user-visible change.
 - The external SSD dropped twice in one day. Instead of failing every item (which burns the
   hourly quota and bandwidth for nothing), the runner now checks the target drive before each
   item and waits with a log line until it is back; it also pauses when free space is under 2 GB.
+## 2026-10-26 — `.part` broke ffmpeg (fixed same hour)
+
+- Writing through `<name>.mp4.part` removed the file extension ffmpeg uses to pick the muxer, so
+  every video failed at the last step ("Error initializing the muxer … Invalid argument") while
+  the segments had already been downloaded (16 items, ~2 GB wasted).
+- The command now passes `-f mp4` explicitly and is built by `_ffmpeg_command()` so a test can
+  assert it. Verified with a real video right after the fix.
