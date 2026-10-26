@@ -183,3 +183,40 @@ def test_urlparse_roundtrip_of_auth_query_keeps_signature():
     _, auth = dash.split_mpd_url(MPD_URL)
     parsed = urlparse("https://cdn/x.mpd?" + auth)
     assert parsed.query
+
+def test_mux_uses_a_part_file_then_renames(tmp_path, monkeypatch):
+    """A dropped drive must never leave a half written .mp4 (that would count as done)."""
+    import os
+
+    target = tmp_path / "lecture.mp4"
+    seen = {}
+
+    def fake_ffmpeg(mpd, out_fs, key):
+        seen["path"] = out_fs
+        with open(out_fs, "wb") as handle:
+            handle.write(b"x" * 2048)
+        return 0, ""
+
+    monkeypatch.setattr(dash, "_run_ffmpeg", fake_ffmpeg)
+    ok, error, size = dash._mux_to_target(tmp_path / "local.mpd", target, None)
+
+    assert ok is True and error == "" and size == 2048
+    assert seen["path"].endswith("lecture.mp4.part")
+    assert target.read_bytes()[:1] == b"x"
+    assert not (tmp_path / "lecture.mp4.part").exists()
+
+
+def test_failed_mux_removes_the_part_file(tmp_path, monkeypatch):
+    target = tmp_path / "lecture.mp4"
+
+    def broken_ffmpeg(mpd, out_fs, key):
+        with open(out_fs, "wb") as handle:
+            handle.write(b"partial")
+        return 1, "conversion failed"
+
+    monkeypatch.setattr(dash, "_run_ffmpeg", broken_ffmpeg)
+    ok, error, size = dash._mux_to_target(tmp_path / "local.mpd", target, None)
+
+    assert ok is False and "ffmpeg fail" in error and size == 0
+    assert not target.exists()
+    assert not (tmp_path / "lecture.mp4.part").exists()

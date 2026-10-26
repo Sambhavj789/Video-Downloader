@@ -391,6 +391,34 @@ def _run_ffmpeg(local_mpd: Path, out_path: Path, key: str | None) -> tuple[int, 
     return completed.returncode, tail
 
 
+def _safe_remove(path: str) -> None:
+    """Best effort: the drive may already be gone."""
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
+
+
+def _mux_to_target(local_mpd: Path, out_path: Path, key: str | None) -> tuple[bool, str, int]:
+    """ffmpeg into ``<name>.part``, then rename — a dropped drive never leaves a fake ``.mp4``."""
+    from . import names
+
+    temp_path = out_path.with_name(out_path.name + ".part")
+    temp_fs = names.fs_path(temp_path)
+    out_fs = names.fs_path(out_path)
+    code, tail = _run_ffmpeg(local_mpd, temp_fs, key)
+    if code != 0 or not os.path.exists(temp_fs):
+        _safe_remove(temp_fs)
+        return False, f"ffmpeg fail ({code}): {tail}", 0
+    try:
+        os.replace(temp_fs, out_fs)
+    except OSError as exc:
+        _safe_remove(temp_fs)
+        return False, f"file move fail: {exc}", 0
+    return True, "", os.path.getsize(out_fs)
+
+
 async def download_video(video_data: dict, out_path: Path, temp_dir: Path, *,
                          quality: str = "best", workers: int = 3, retries: int = 4,
                          timeout: int = 60, progress: ProgressFn | None = None) -> Result:
@@ -437,17 +465,17 @@ async def download_video(video_data: dict, out_path: Path, temp_dir: Path, *,
     local_mpd = build_local_mpd(manifest, video_track, audio_track, temp_dir)
     from . import names
 
-    Path(names.fs_path(out_path.parent)).mkdir(parents=True, exist_ok=True)
+    try:
+        Path(names.fs_path(out_path.parent)).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return Result(ok=False, error=f"target folder nahi bana: {exc}")
     if progress:
         progress({"phase": "mux", "done": 0, "total": 1, "message": "ffmpeg"})
-    out_fs = names.fs_path(out_path)
-    code, tail = _run_ffmpeg(local_mpd, out_fs, key)
+    ok, error, size = _mux_to_target(local_mpd, out_path, key)
     shutil.rmtree(temp_dir, ignore_errors=True)
-    if code != 0 or not os.path.exists(out_fs):
-        if os.path.exists(out_fs):
-            os.remove(out_fs)
-        return Result(ok=False, error=f"ffmpeg fail ({code}): {tail}")
-    size = os.path.getsize(out_fs)
+    if not ok:
+        return Result(ok=False, error=error)
     if progress:
         progress({"phase": "done", "done": 1, "total": 1, "bytes": size})
     return Result(ok=True, path=out_path, size=size, failed_segments=failed)

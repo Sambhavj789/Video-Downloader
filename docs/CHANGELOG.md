@@ -76,3 +76,11 @@ Newest first. One line per user-visible change.
   keeps going instead of the whole process dying.
 - Reported MB/s is now measured over download time only; long quota waits no longer show up as
   "0.02 MB/s".
+## 2026-10-26 — atomic video write (dropped drive)
+
+- ffmpeg used to write straight to the final `.mp4`, so a USB drop mid-mux left a truncated file
+  with a non-zero size — and the next run skipped it as "already done". It now muxes to
+  `<name>.mp4.part` and `os.replace()`s it into place; failures delete the `.part`.
+- The external library SSD (`G:`, SanDisk Portable SSD) dropped twice today and came back NTFS
+  *dirty*; a rescan (`Update-HostStorageCache`) restored the volume. All 22 videos downloaded
+  before the drop re-checked with ffmpeg: 0 bad files.
