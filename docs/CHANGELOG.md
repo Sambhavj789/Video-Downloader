@@ -84,3 +84,8 @@ Newest first. One line per user-visible change.
 - The external library SSD (`G:`, SanDisk Portable SSD) dropped twice today and came back NTFS
   *dirty*; a rescan (`Update-HostStorageCache`) restored the volume. All 22 videos downloaded
   before the drop re-checked with ffmpeg: 0 bad files.
+## 2026-10-26 — run waits for a missing library drive
+
+- The external SSD dropped twice in one day. Instead of failing every item (which burns the
+  hourly quota and bandwidth for nothing), the runner now checks the target drive before each
+  item and waits with a log line until it is back; it also pauses when free space is under 2 GB.

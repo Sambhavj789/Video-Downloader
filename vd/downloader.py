@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import dash, names, state
-from .config import STATE_DIR, TEMP_DIR
+from .config import STATE_DIR, TEMP_DIR, free_space_gb
 from .stream import NetworkError, RateLimited, SessionExpired, StreamClient, StreamError
 
 EventFn = Callable[[dict], None]
@@ -97,6 +97,36 @@ class DownloadRunner:
                 return
             self._trim_window()
 
+    def _target_exists(self, root: Path) -> bool:
+        try:
+            return root.exists()
+        except OSError:
+            return False
+
+    async def wait_for_target(self, target: Path) -> None:
+        """The library SSD has dropped twice — wait for it instead of failing item after item."""
+        try:
+            root = Path(target.anchor)
+        except (OSError, ValueError):  # pragma: no cover - defensive
+            return
+        if not str(root):
+            return
+        while not self._target_exists(root):
+            self.log(f"[drive] {root} nahi mil raha — wapas lagao, main 60s par check karta rahunga")
+            self.emit(type="pause", seconds=60, reason="drive")
+            await self._sleep(60)
+            if self.should_stop():
+                return
+        while True:
+            free = free_space_gb(root)
+            if free is None or free >= 2:
+                return
+            self.log(f"[drive] {root} par sirf {free} GB free — 5 min wait")
+            self.emit(type="pause", seconds=300, reason="space")
+            await self._sleep(300)
+            if self.should_stop():
+                return
+
     def emit(self, **event) -> None:
         try:
             self.on_event(event)
@@ -121,6 +151,11 @@ class DownloadRunner:
                     self.skipped += 1
                     self.emit(type="skip", index=index, total=total, item=item)
                     continue
+
+                await self.wait_for_target(target)
+                if self.should_stop():
+                    self.log("stop request mila — ruk raha hoon")
+                    break
 
                 if item.get("kind") == "videos":
                     await self.wait_for_video_slot()

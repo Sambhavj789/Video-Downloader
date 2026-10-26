@@ -133,3 +133,34 @@ def test_repeated_network_errors_give_up_eventually(tmp_path):
     assert ok is False
     assert error.startswith("network:")
     assert calls["n"] == 5
+
+def test_missing_drive_makes_the_runner_wait_instead_of_failing(tmp_path):
+    """G: has dropped twice; the runner must wait for it, not burn quota on unwritable targets."""
+    runner = _runner(tmp_path)
+    checks = {"n": 0}
+
+    async def fake_sleep(seconds):
+        return None
+
+    runner._sleep = fake_sleep
+    runner._target_exists = lambda root: checks.__setitem__("n", checks["n"] + 1) or checks["n"] > 2
+    asyncio.run(runner.wait_for_target(tmp_path / "Subject" / "video.mp4"))
+    assert checks["n"] == 3
+
+
+def test_low_free_space_pauses_the_runner(tmp_path, monkeypatch):
+    import vd.downloader as downloader_module
+
+    runner = _runner(tmp_path)
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    runner._sleep = fake_sleep
+    runner._target_exists = lambda root: True
+    values = iter([0.4, 12.0])
+    monkeypatch.setattr(downloader_module, "free_space_gb", lambda root: next(values))
+
+    asyncio.run(runner.wait_for_target(tmp_path / "v.mp4"))
+    assert waits == [300]
