@@ -15,9 +15,12 @@ updated: 2026-10-26
 - `python -m vd status --all` — per-subject report + `<library>\_SYNC-STATUS.md`.
 - `python -m vd download --all --kinds notes,dpp,documents --yes` — **all 673 notes + 14
   e-books/question banks downloaded, 0 failures** (2026-10-26).
+- `python -m vd download --subject … --kinds videos --yes` — **one video end to end, verified**:
+  "GST in india- An introduction 03" → 3885/3885 segments, ClearKey decrypt, ffmpeg mux →
+  577 MB `.mp4`, 2h09m, 1280x720 H.264 + AAC, 1.21 MB/s, 476 s (2026-10-26).
 - `python -m vd ui` — browser UI: subjects, plan, selection, catalog/download jobs, log,
   session/settings dialogs, report button, stop button.
-- `python -m pytest tests -q` — 91 tests pass (no network, no real library).
+- `python -m pytest tests -q` — 92 tests pass (no network, no real library).
 
 ## Library snapshot
 
@@ -37,11 +40,11 @@ Notes and e-books are now complete; **106 videos still missing** (GST 66, AA 39,
 
 ## Blocked / risks
 
-- **Founder:** access key — site ne 2026-10-26 se naya "Generate Access Key" gate laga diya.
-  Chrome → `https://stream.testuk.org` → **Generate Access Key** → verification complete → DevTools
-  → Application → Cookies → saari `stream.testuk.org` cookies `vd` ke Session dialog me paste
-  karo (`start.bat` → **Session**). Iske bina schedule page gate dikhata hai aur koi video
-  download nahi hota; notes/PDFs par koi asar nahi (wo direct CDN se aate hain).
+- **Access-key gate — resolved 2026-10-26.** Site ne 2026-10-26 se naya "Generate Access Key" gate
+  laga diya tha. Flow: Chrome → `https://stream.testuk.org` → **Generate Access Key** → verification
+  complete → DevTools → Application → Cookies → saari `stream.testuk.org` cookies `vd` ke Session
+  dialog me paste (`start.bat` → **Session**). Gate dikhe to `vd` ka session dialog wahi steps dikhata
+  hai (`stream._BLOCK_MARKERS`). Notes/PDFs par iska koi asar nahi padta (wo direct CDN se aate hain).
 - **Disk space.** 106 videos ≈73 GB bache hain, `G:` par ≈129 GB free — fits, par slides
   (thousands of images) + future batches ke liye headroom kam hai. Add `--kinds slides` only
   jab zarurat ho.
@@ -50,8 +53,6 @@ Notes and e-books are now complete; **106 videos still missing** (GST 66, AA 39,
 
 ## Not verified yet
 
-- One real video end to end (segments → decrypt → mux → playable `.mp4`): the CDN 403 fix is
-  proven at the manifest level, but the last full run stopped at the access-key gate.
 - A full UI click-through (catalog → select → download → report refresh).
 - **MCQ:** MCQ *videos* are covered like any other lecture (`MCQ` chapters: AA 34, Cost 14,
   FM&SM 16). MCQ *questions* are **not** on this site: `v3/test-service/tests` returns 0 tests
@@ -60,13 +61,12 @@ Notes and e-books are now complete; **106 videos still missing** (GST 66, AA 39,
 
 ## Next
 
-1. **Founder:** access key — Chrome me `stream.testuk.org` kholo, **Generate Access Key** complete
-   karo, phir DevTools > Application > Cookies ki saari values `start.bat` ke **Session** dialog me
-   paste karo. Iske bina bache 106 videos download nahi honge (notes ho chuke).
-2. `python -m vd download --all --kinds videos --yes` — bache hue 106 videos (GST 66, AA 39,
-   Cost 1). Resumable: jo file already hai wo skip hoti hai.
-3. `python -m vd status --all` se `_SYNC-STATUS.md` refresh karo; phir decide karo slides chahiye
-   ya nahi (D-02 / SPEC).
+1. `python -m vd download --all --kinds videos --yes` background me chal raha hai — bache hue
+   106 videos (GST 66, AA 39, Cost 1, ≈73 GB). Resumable: jo file already hai wo skip hoti hai;
+   `G:` drive nikal jaye to wapas lagao aur wahi command dobara chalao.
+2. Run ke baad `python -m vd status --all` → `_SYNC-STATUS.md` refresh; failed items retry
+   (`--retry-failed`).
+3. Slides chahiye ya nahi decide karo (`--kinds slides`, D-02 / SPEC) — disk headroom kam hai.
 
 ## Housekeeping
 
