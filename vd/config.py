@@ -45,6 +45,7 @@ class Settings:
 
     output_root: str = ""
     concurrency: int = 12         # parallel segment downloads per video (16+ nahi tez)
+    videos_per_hour: int = 18     # API allows 20 video-url-details/hour; stay under it
     video_workers: int = 1        # videos downloaded at the same time
     retries: int = 4              # attempts per segment / per file
     fetch_workers: int = 2        # parallel schedule-page requests (higher = HTTP 429)

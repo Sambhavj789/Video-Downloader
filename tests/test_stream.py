@@ -102,3 +102,24 @@ def test_schedule_parse_of_real_page_shape():
     )
     assert schedule.has_video
     assert json.dumps(schedule.to_dict())  # serialisable for logs/catalog
+
+def test_rate_limit_reads_the_hourly_message():
+    """The site's 429 body names the quota: '20 video requests in the last 1 hour'."""
+    body = '{"message":"You have reached the limit of 20 video requests in the last 1 hour. Please try again later.","success":false}'
+    exc = stream.rate_limit(stream._json_message(body))
+    assert isinstance(exc, stream.RateLimited)
+    assert isinstance(exc, stream.StreamError)
+    assert exc.retry_after == 3600
+
+
+def test_rate_limit_prefers_retry_after_header():
+    exc = stream.rate_limit("slow down", {"Retry-After": "120"})
+    assert exc.retry_after == 120
+    # never wait less than a minute, never more than the 65 minute safety cap
+    assert stream.rate_limit("x", {"Retry-After": "1"}).retry_after == 60
+    assert stream.rate_limit("x", {"Retry-After": "99999"}).retry_after == 3900
+
+
+def test_json_message_falls_back_to_raw_text():
+    assert stream._json_message('{"message":"quota"}') == "quota"
+    assert stream._json_message("not json at all") == "not json at all"

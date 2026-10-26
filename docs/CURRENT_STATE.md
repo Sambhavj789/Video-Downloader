@@ -45,6 +45,9 @@ Notes and e-books are now complete; **106 videos still missing** (GST 66, AA 39,
   complete → DevTools → Application → Cookies → saari `stream.testuk.org` cookies `vd` ke Session
   dialog me paste (`start.bat` → **Session**). Gate dikhe to `vd` ka session dialog wahi steps dikhata
   hai (`stream._BLOCK_MARKERS`). Notes/PDFs par iska koi asar nahi padta (wo direct CDN se aate hain).
+- **Hourly video quota.** `video-url-details` allows only **20 videos/hour**; the runner paces at
+  18/hour and waits out the window, so 86 remaining videos take ≈5 hours even before download
+  time. Do not launch two `vd download` runs at once — they share the same quota.
 - **Disk space.** 106 videos ≈73 GB bache hain, `G:` par ≈129 GB free — fits, par slides
   (thousands of images) + future batches ke liye headroom kam hai. Add `--kinds slides` only
   jab zarurat ho.

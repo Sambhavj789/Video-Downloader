@@ -56,3 +56,13 @@ Newest first. One line per user-visible change.
 - 80 pytest tests; docs kit (`docs/`, `AGENTS.md`, `verify-docs.js`) added.
 - Legacy one-off scripts and scraped HTML moved to `legacy/` (reference only); cookies and
   tokens are gitignored.
+## 2026-10-26 — hourly video quota (HTTP 429)
+
+- `video-url-details` is limited to **20 requests per hour** per session/IP; the API says so in the
+  429 body ("You have reached the limit of 20 video requests in the last 1 hour"). The old code
+  turned that into a normal failure, so a full run wrote 20 videos and then failed the rest.
+- `stream.RateLimited` now carries the reset window (server message or `Retry-After`), and the
+  downloader **waits and retries the same item** instead of marking it failed.
+- `DownloadRunner` also paces itself: at most `videos_per_hour` (default 18) `video-url-details`
+  calls per rolling hour, with the timestamps persisted in `state/video_requests.json`, so a
+  restarted run does not waste a request on a 429.

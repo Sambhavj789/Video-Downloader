@@ -7,17 +7,21 @@ decides whether to print them or push them to a browser.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
+from collections import deque
 from pathlib import Path
 from typing import Callable
 
 from . import dash, names, state
-from .config import TEMP_DIR
-from .stream import SessionExpired, StreamClient, StreamError
+from .config import STATE_DIR, TEMP_DIR
+from .stream import RateLimited, SessionExpired, StreamClient, StreamError
 
 EventFn = Callable[[dict], None]
 StopFn = Callable[[], bool]
+
+QUOTA_FILE = STATE_DIR / "video_requests.json"
 
 
 def _never_stop() -> bool:
@@ -38,6 +42,57 @@ class DownloadRunner:
         self.failed = 0
         self.done = 0
         self.skipped = 0
+        self.video_times: deque[float] = deque()
+        self._load_window()
+
+    # -- hourly video quota --------------------------------------------------
+    @property
+    def videos_per_hour(self) -> int:
+        """The API allows 20 ``video-url-details`` calls/hour; stay under it."""
+        return max(1, int(getattr(self.settings, "videos_per_hour", 18) or 18))
+
+    def _trim_window(self) -> None:
+        cutoff = time.time() - 3600
+        while self.video_times and self.video_times[0] < cutoff:
+            self.video_times.popleft()
+
+    def _load_window(self) -> None:
+        """A restarted run must still know how much of the hour is already spent."""
+        try:
+            saved = json.loads(QUOTA_FILE.read_text(encoding="utf-8"))
+            self.video_times.extend(float(value) for value in saved)
+        except (OSError, ValueError, TypeError):
+            pass
+        self._trim_window()
+
+    def _save_window(self) -> None:
+        try:
+            QUOTA_FILE.parent.mkdir(parents=True, exist_ok=True)
+            QUOTA_FILE.write_text(json.dumps(list(self.video_times)), encoding="utf-8")
+        except OSError:
+            pass
+
+    async def _sleep(self, seconds: float) -> None:
+        """Sleep in small steps so ``should_stop`` still works during a long wait."""
+        end = time.time() + seconds
+        while time.time() < end:
+            if self.should_stop():
+                return
+            await asyncio.sleep(min(10, end - time.time()))
+
+    async def wait_for_video_slot(self) -> None:
+        self._trim_window()
+        while len(self.video_times) >= self.videos_per_hour:
+            wait = 3600 - (time.time() - self.video_times[0]) + 5
+            self.log(
+                f"[rate-limit] ghante ki limit ({self.videos_per_hour} videos/hour) bhar gayi — "
+                f"{wait / 60:.0f} min wait, phir apne aap chalu"
+            )
+            self.emit(type="pause", seconds=int(wait), reason="hourly-quota")
+            await self._sleep(wait)
+            if self.should_stop():
+                return
+            self._trim_window()
 
     def emit(self, **event) -> None:
         try:
@@ -63,6 +118,14 @@ class DownloadRunner:
                     self.skipped += 1
                     self.emit(type="skip", index=index, total=total, item=item)
                     continue
+
+                if item.get("kind") == "videos":
+                    await self.wait_for_video_slot()
+                    if self.should_stop():
+                        self.log("stop request mila — ruk raha hoon")
+                        break
+                    self.video_times.append(time.time())
+                    self._save_window()
 
                 self.emit(type="item_start", index=index, total=total, item=item)
                 ok, error = await self._download_item(stream, item, index, total)
@@ -101,9 +164,24 @@ class DownloadRunner:
     async def _download_item(self, stream: StreamClient, item: dict,
                              index: int, total: int) -> tuple[bool, str]:
         kind = item["kind"]
-        if kind == "videos":
-            return await self._download_video(stream, item, index, total)
-        return await self._download_file(item)
+        if kind != "videos":
+            return await self._download_file(item)
+        for attempt in range(4):
+            try:
+                return await self._download_video(stream, item, index, total)
+            except RateLimited as exc:
+                if attempt == 3:
+                    return False, str(exc)
+                wait = max(60.0, min(exc.retry_after, 3900.0))
+                self.log(
+                    f"[rate-limit] {exc} — {wait / 60:.0f} min wait, phir wahi video "
+                    f"(try {attempt + 1}/3)"
+                )
+                self.emit(type="pause", seconds=int(wait), reason="rate-limit")
+                await self._sleep(wait)
+                self.video_times.append(time.time())
+                self._save_window()
+        return False, "rate limit"
 
     async def _download_video(self, stream: StreamClient, item: dict,
                               index: int, total: int) -> tuple[bool, str]:
@@ -120,6 +198,8 @@ class DownloadRunner:
                     break
                 except SessionExpired:
                     raise
+                except RateLimited:
+                    raise
                 except StreamError as exc:
                     if attempt == 2 or "429" not in str(exc):
                         return False, str(exc)
@@ -130,6 +210,8 @@ class DownloadRunner:
                 return False, "MEDIA_TOKEN nahi mila"
             video_data = await stream.video_data(schedule.media_token)
         except SessionExpired:
+            raise
+        except RateLimited:
             raise
         except StreamError as exc:
             return False, str(exc)

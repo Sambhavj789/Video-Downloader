@@ -57,6 +57,42 @@ class SessionExpired(StreamError):
         self.status = status
 
 
+class RateLimited(StreamError):
+    """The API's hourly video-url quota is gone (``HTTP 429``): *wait*, don't fail."""
+
+    def __init__(self, detail: str = "", retry_after: float = 3600.0):
+        super().__init__(detail or "rate limited")
+        self.detail = detail
+        self.retry_after = retry_after
+
+
+_LIMIT_RE = re.compile(r"limit of (\d+) video requests in the last (\d+) hour", re.I)
+
+
+def rate_limit(message: str, headers: dict | None = None) -> RateLimited:
+    """Build the exception, preferring the server's own reset window."""
+    wait = 3600.0
+    raw = str((headers or {}).get("Retry-After") or "").strip()
+    if raw:
+        try:
+            wait = float(raw)
+        except ValueError:
+            pass
+    else:
+        match = _LIMIT_RE.search(message or "")
+        if match:
+            # "in the last 1 hour" -> the window is that long, so wait for the oldest slot.
+            wait = float(match.group(2)) * 3600.0
+    return RateLimited(message, max(60.0, min(wait, 3900.0)))
+
+
+def _json_message(body: str) -> str:
+    try:
+        return str(json.loads(body or "").get("message") or "")
+    except (json.JSONDecodeError, AttributeError):
+        return (body or "")[:200]
+
+
 @dataclass
 class Schedule:
     schedule_id: str
@@ -137,6 +173,7 @@ class StreamClient:
         self.timeout = timeout
         self.retries = retries
         self._session = None
+        self.last_headers: dict = {}
 
     async def __aenter__(self) -> "StreamClient":
         from curl_cffi.requests import AsyncSession
@@ -162,6 +199,7 @@ class StreamClient:
         response = await self._session.get(
             url, headers=headers, cookies=self.cookies, timeout=self.timeout
         )
+        self.last_headers = dict(response.headers)
         return response.status_code, response.text
 
     @staticmethod
@@ -206,6 +244,8 @@ class StreamClient:
         query = urlencode({"mediaToken": media_token, "videoContainerType": "DASH"})
         url = f"{STREAM_BASE}/v1/videos/video-url-details?{query}"
         status, body = await self.get_text(url, accept="application/json, text/plain, */*")
+        if status == 429:
+            raise rate_limit(_json_message(body), self.last_headers)
         if self._looks_blocked(status, body):
             raise SessionExpired(f"video-url-details ne {status} diya.", status)
         if status != 200:
