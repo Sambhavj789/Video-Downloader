@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Please wait...</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Helvetica,Arial,sans-serif;background:#f7f7f7;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:15px}
+.w{background:#fff;max-width:580px;width:100%;padding:32px 24px;border-radius:10px;box-shadow:0 5px 20px rgba(0,0,0,.1);text-align:center}
+.lbl{color:red;font-size:17px;font-weight:700;text-transform:uppercase;margin-bottom:20px;display:block}
+.gi{max-height:500px;width:auto;max-width:100%;border-radius:6px;margin-bottom:20px}
+.tmr{font-size:22px;font-weight:700;color:#333;margin-bottom:18px}
+.cta{display:none;margin-bottom:4px}.cta a{color:red;font-weight:700;font-size:15px;text-decoration:none;text-transform:uppercase}
+.pw{height:4px;background:#f0f0f0;border-radius:4px;margin-top:20px;overflow:hidden}
+.pb{height:4px;background:red;border-radius:4px;width:100%;transition:width 1s linear}
+@media(max-width:480px){.w{padding:24px 16px}.tmr{font-size:18px}}
+</style>
+</head>
+<body>
+<div class="w">
+<b class="lbl">CLICK ON FIRST LINK OF TIPSGURU.IN</b>
+<img src="https://tipsguru.in/wp-content/plugins/wp-prolink-fixed/assets/ggg.jpg" class="gi" alt="Guide">
+<div class="tmr">REDIRECTING IN <span id="t">5</span>s PLEASE WAIT.</div>
+<div class="cta" id="clk"><a href="https://www.google.com/search?q=TipsGuru" target="_blank">CLICK HERE TO CONTINUE</a></div>
+<div class="pw"><div class="pb" id="pb"></div></div>
+</div>
+<script>
+(function(){
+var v="aHR0cHM6Ly9zdHJlYW0udGVzdHVrLm9yZy9rZXlsb2dpbnN1Y2Nlc3M=",e=1800,d=new Date();
+d.setTime(d.getTime()+e*1000);
+if(v){document.cookie="tipsguru="+encodeURIComponent(v)+";expires="+d.toUTCString()+";path=/";}
+document.cookie="wppro_steps=;expires="+d.toUTCString()+";path=/";
+var tot=5,cnt=tot,el=document.getElementById('t'),pb=document.getElementById('pb'),dest=decodeURIComponent("https%3A%2F%2Fwww.google.com%2Fsearch%3Fq%3DTipsGuru");
+window.onload=function(){var c=document.getElementById('clk');if(c)c.style.display='block';};
+var iv=setInterval(function(){cnt--;if(el)el.innerText=cnt;if(pb)pb.style.width=(cnt/tot*100)+'%';if(cnt<=0){clearInterval(iv);location.href=dest;}},1000);
+})();
+</script>
+</body>
+</html>

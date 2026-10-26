@@ -1,0 +1,11 @@
+# Runtime + dev dependencies for the Video-Downloader engine.
+# Install:  python -m pip install -r requirements.txt
+#           python -m playwright install chromium
+
+playwright>=1.40         # headless Chromium: metadata proxy (Cloudflare-protected)
+curl_cffi>=0.7           # stream site pages (Chrome TLS fingerprint + cf_clearance)
+aiohttp>=3.9             # segment / PDF downloads and the MPD fetch
+imageio-ffmpeg>=0.5      # bundled ffmpeg binary: mux + ClearKey decrypt
+
+# dev / verify only
+pytest>=8.0

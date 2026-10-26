@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CA Inter · Offline Downloader</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">↓</span>
+    <div>
+      <strong>CA Inter · Offline Downloader</strong>
+      <small id="root-label" class="muted">…</small>
+    </div>
+  </div>
+  <div class="pills">
+    <button id="session-pill" class="pill" title="Session check / refresh">Session: …</button>
+    <span id="disk-pill" class="pill">Disk: …</span>
+    <button id="btn-settings" class="ghost">Settings</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="sidebar">
+    <div class="side-head">
+      <span>Subjects</span>
+      <button id="btn-add-link" class="ghost small">+ Link</button>
+    </div>
+    <ul id="subject-list" class="subject-list"></ul>
+    <div class="side-foot">
+      <button id="btn-catalog" class="primary wide">Catalog refresh</button>
+      <button id="btn-status" class="ghost wide">Status report</button>
+      <p class="hint">Catalog = site se list (chapters, videos, notes). Status = kya local me bacha hai.</p>
+    </div>
+  </aside>
+
+  <section class="content">
+    <div id="empty" class="empty">
+      <h2>Shuru karo</h2>
+      <p>Left se subject chuno. Pehli baar <b>Catalog refresh</b> dabao — phir jo missing hai wo tick karke download karo.</p>
+      <p class="muted">Naya subject? <b>+ Link</b> me site ka content link paste karo.</p>
+    </div>
+
+    <div id="subject-panel" class="hidden">
+      <div class="subject-head">
+        <div class="subject-title-wrap">
+          <h2 id="subject-title">—</h2>
+          <div id="subject-sub" class="muted"></div>
+        </div>
+        <div class="filters">
+          <label class="check"><input type="checkbox" id="only-missing" checked> Sirf missing</label>
+          <div id="kind-chips" class="chips"></div>
+          <input id="search" class="search" placeholder="Search chapter / video…">
+        </div>
+      </div>
+
+      <div id="summary-strip" class="summary-strip"></div>
+      <div id="chapters" class="chapters"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="actionbar">
+  <div id="selection-text" class="selection-text">Kuch select nahi</div>
+  <div class="actions">
+    <button id="btn-select-missing" class="ghost">Sab missing</button>
+    <button id="btn-clear" class="ghost">Clear</button>
+    <button id="btn-download" class="primary" disabled>Download</button>
+  </div>
+</footer>
+
+<section id="jobbar" class="jobbar hidden">
+  <div class="job-head">
+    <strong id="job-title">—</strong>
+    <span id="job-status" class="pill">—</span>
+    <button id="btn-stop" class="ghost small">Stop</button>
+    <button id="btn-log" class="ghost small">Log</button>
+  </div>
+  <div class="bar"><div id="job-fill" class="bar-fill"></div></div>
+  <div class="job-meta">
+    <span id="job-current">—</span>
+    <span id="job-numbers"></span>
+  </div>
+  <pre id="job-log" class="job-log hidden"></pre>
+</section>
+
+<!-- dialogs -->
+<dialog id="dlg-link">
+  <form method="dialog" class="dlg">
+    <h3>Subject link add karo</h3>
+    <p class="muted">Site par subject kholo → address bar ka poora link copy karo (usme <code>batchId</code> aur <code>subjectId</code> hote hain).</p>
+    <textarea id="link-url" rows="3" placeholder="https://stream.testuk.org/content?batchId=…&subjectId=…"></textarea>
+    <label class="field">Folder name (optional, khaali chhodo = site ka naam)
+      <input id="link-dir" placeholder="e.g. Financial-Management-And-Stratigic-Management">
+    </label>
+    <p id="link-msg" class="msg"></p>
+    <menu>
+      <button value="cancel" class="ghost">Cancel</button>
+      <button id="link-save" value="ok" class="primary">Add</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="dlg-session">
+  <form method="dialog" class="dlg">
+    <h3>Session (cookies)</h3>
+    <p class="muted">Site Cloudflare ke peeche hai. Cookies khatam ho jayein to:</p>
+    <ol class="steps">
+      <li>Chrome me <b>stream.testuk.org</b> kholo aur koi video page chalao (keygenerate/ads pura karo).</li>
+      <li>F12 → Application → Cookies → <b>stream.testuk.org</b>.</li>
+      <li><code>cf_clearance</code> aur <code>session</code> ki value copy karo.</li>
+      <li>Neeche JSON me paste karo (values ke saath) aur Save dabao.</li>
+    </ol>
+    <textarea id="session-json" rows="5" placeholder='{"cf_clearance": "…", "session": "…"}'></textarea>
+    <p id="session-msg" class="msg"></p>
+    <menu>
+      <button value="cancel" class="ghost">Close</button>
+      <button id="session-save" value="ok" class="primary">Save &amp; verify</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="dlg-settings">
+  <form method="dialog" class="dlg">
+    <h3>Settings</h3>
+    <label class="field">Library folder (yahan videos/PDFs jayenge)
+      <input id="set-root" placeholder="G:\Knowledge\CA-Inter">
+    </label>
+    <label class="field">Parallel segments per video (1–8)
+      <input id="set-concurrency" type="number" min="1" max="8" step="1">
+    </label>
+    <label class="field">Quality
+      <select id="set-quality">
+        <option value="best">Best available</option>
+        <option value="1080">1080p</option>
+        <option value="720">720p</option>
+        <option value="480">480p</option>
+      </select>
+    </label>
+    <p class="muted small">Folder badalne se purani files move nahi hoti — sirf naye downloads naye path me jayenge.</p>
+    <p id="settings-msg" class="msg"></p>
+    <menu>
+      <button value="cancel" class="ghost">Close</button>
+      <button id="settings-save" value="ok" class="primary">Save</button>
+    </menu>
+  </form>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,12 +1,40 @@
+# --- runtime output ---------------------------------------------------------
 output/
-_batch_temp/
-_segments/
+logs/
+state/
+.work/
+.dev-pages/
+.pytest_cache/
+*.log
+
+# --- python ---------------------------------------------------------------
 __pycache__/
 *.pyc
 *.pyo
-*.manifest
+*.pyd
+
+# --- secrets (never commit, never echo) ----------------------------------
+config/cookies.json
+stream_cookies.json
+token.txt
+pw_headers.json
+
+# --- per-machine config (regenerate with `python -m vd link`) --------------
+config/settings.json
+config/subjects.json
+config/links/
+*_progress.json
+
+# --- media leftovers ------------------------------------------------------
 *.mp4
-*.html
-batch_progress.json
-batch_link.txt
-link.txt
+*.mpd
+*.part
+_temp/
+_segments/
+_debug_segments/
+_batch_temp/
+
+# --- old debug scrapes ----------------------------------------------------
+page*.html
+video_html_code.html
+_*_debug.html

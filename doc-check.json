@@ -1,0 +1,16 @@
+{
+  "required": [
+    "AGENTS.md",
+    "README.md",
+    "docs/00-index.md",
+    "docs/ARCHITECTURE.md",
+    "docs/CODEMAP.md",
+    "docs/SPEC.md",
+    "docs/DEVELOPMENT.md",
+    "docs/DECISIONS.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/CURRENT_STATE.md",
+    "docs/CHANGELOG.md"
+  ],
+  "sources": ["vd", "tests", "tools"]
+}

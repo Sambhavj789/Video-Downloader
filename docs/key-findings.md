@@ -1,5 +1,9 @@
 # Stream.testuk.org Downloader — Key Findings
 
+> **Historical (2026-07).** Kept for the DRM/Cloudflare reasoning, not as a how-to.
+> The `api.penpencil.co` Bearer-token path described below is dead (401); current code uses
+> the site's proxy via headless Chromium — see `ARCHITECTURE.md` and `DECISIONS.md` (D-05).
+
 ## 1. Cloudflare & Keygenerate Flow
 
 - `stream.testuk.org` uses Cloudflare to block non-browser clients.
