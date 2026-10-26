@@ -66,3 +66,70 @@ def test_saved_window_survives_a_restart(tmp_path):
     runner.video_times.append(time.time())
     runner._save_window()
     assert len(json.loads(quota.read_text(encoding="utf-8"))) == 4
+
+def test_network_blip_is_retried_not_failed(tmp_path):
+    """A DNS drop must not kill a 6 hour run."""
+    from vd.stream import NetworkError
+
+    runner = _runner(tmp_path)
+    calls = {"n": 0}
+
+    async def fake_video(stream, item, index, total):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise NetworkError("DNSError: Could not resolve host")
+        return True, ""
+
+    async def no_sleep(seconds):
+        return None
+
+    runner._download_video = fake_video
+    runner._sleep = no_sleep
+    ok, error = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
+    assert ok is True and error == ""
+    assert calls["n"] == 2
+
+
+def test_rate_limit_waits_then_retries_the_same_item(tmp_path):
+    from vd.stream import RateLimited
+
+    runner = _runner(tmp_path)
+    calls = {"n": 0}
+    waits = []
+
+    async def fake_video(stream, item, index, total):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RateLimited("20 videos/hour", 60)
+        return True, ""
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+
+    runner._download_video = fake_video
+    runner._sleep = fake_sleep
+    ok, _ = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
+    assert ok is True
+    assert waits == [60]
+    assert len(runner.video_times) == 1
+
+
+def test_repeated_network_errors_give_up_eventually(tmp_path):
+    from vd.stream import NetworkError
+
+    runner = _runner(tmp_path)
+    calls = {"n": 0}
+
+    async def always_fail(stream, item, index, total):
+        calls["n"] += 1
+        raise NetworkError("offline")
+
+    async def no_sleep(seconds):
+        return None
+
+    runner._download_video = always_fail
+    runner._sleep = no_sleep
+    ok, error = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
+    assert ok is False
+    assert error.startswith("network:")
+    assert calls["n"] == 5

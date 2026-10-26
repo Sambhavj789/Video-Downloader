@@ -16,7 +16,7 @@ from typing import Callable
 
 from . import dash, names, state
 from .config import STATE_DIR, TEMP_DIR
-from .stream import RateLimited, SessionExpired, StreamClient, StreamError
+from .stream import NetworkError, RateLimited, SessionExpired, StreamClient, StreamError
 
 EventFn = Callable[[dict], None]
 StopFn = Callable[[], bool]
@@ -41,6 +41,7 @@ class DownloadRunner:
         self.quota_file = Path(quota_file) if quota_file else QUOTA_FILE
         self.started = time.time()
         self.bytes_done = 0
+        self.download_seconds = 0.0
         self.failed = 0
         self.done = 0
         self.skipped = 0
@@ -130,7 +131,12 @@ class DownloadRunner:
                     self._save_window()
 
                 self.emit(type="item_start", index=index, total=total, item=item)
-                ok, error = await self._download_item(stream, item, index, total)
+                try:
+                    ok, error = await self._download_item(stream, item, index, total)
+                except SessionExpired:
+                    raise
+                except Exception as exc:  # ek item ka crash poora run na girade
+                    ok, error = False, f"{type(exc).__name__}: {str(exc).splitlines()[0][:160]}"
                 if ok:
                     self.done += 1
                     state.mark_done(self.key, item["id"], str(target))
@@ -160,7 +166,8 @@ class DownloadRunner:
         return summary
 
     def speed_mbps(self) -> float:
-        elapsed = max(0.5, time.time() - self.started)
+        """Speed over *download* time only — quota waits must not dilute it."""
+        elapsed = max(0.5, self.download_seconds or (time.time() - self.started))
         return round(self.bytes_done / (1024 * 1024) / elapsed, 2)
 
     async def _download_item(self, stream: StreamClient, item: dict,
@@ -168,22 +175,32 @@ class DownloadRunner:
         kind = item["kind"]
         if kind != "videos":
             return await self._download_file(item)
-        for attempt in range(4):
+        rate_tries = 0
+        net_tries = 0
+        while True:
             try:
                 return await self._download_video(stream, item, index, total)
             except RateLimited as exc:
-                if attempt == 3:
+                rate_tries += 1
+                if rate_tries > 3:
                     return False, str(exc)
                 wait = max(60.0, min(exc.retry_after, 3900.0))
                 self.log(
                     f"[rate-limit] {exc} — {wait / 60:.0f} min wait, phir wahi video "
-                    f"(try {attempt + 1}/3)"
+                    f"(try {rate_tries}/3)"
                 )
                 self.emit(type="pause", seconds=int(wait), reason="rate-limit")
                 await self._sleep(wait)
                 self.video_times.append(time.time())
                 self._save_window()
-        return False, "rate limit"
+            except NetworkError as exc:
+                net_tries += 1
+                if net_tries > 4:
+                    return False, f"network: {exc}"
+                wait = min(30.0 * (2 ** (net_tries - 1)), 300.0)
+                self.log(f"[network] {exc} — {wait:.0f}s baad dobara (try {net_tries}/4)")
+                self.emit(type="pause", seconds=int(wait), reason="network")
+                await self._sleep(wait)
 
     async def _download_video(self, stream: StreamClient, item: dict,
                               index: int, total: int) -> tuple[bool, str]:
@@ -202,6 +219,8 @@ class DownloadRunner:
                     raise
                 except RateLimited:
                     raise
+                except NetworkError:
+                    raise
                 except StreamError as exc:
                     if attempt == 2 or "429" not in str(exc):
                         return False, str(exc)
@@ -214,6 +233,8 @@ class DownloadRunner:
         except SessionExpired:
             raise
         except RateLimited:
+            raise
+        except NetworkError:
             raise
         except StreamError as exc:
             return False, str(exc)
@@ -229,6 +250,7 @@ class DownloadRunner:
                 self.emit(type="progress", index=index, total=total, item=item, phase="mux")
 
         temp_dir = TEMP_DIR / f"vid-{abs(hash(item['id'])) % 10_000_000:07d}"
+        download_started = time.time()
         result = await dash.download_video(
             video_data, Path(item["target"]), temp_dir,
             quality=self.settings.quality,
@@ -236,6 +258,7 @@ class DownloadRunner:
             retries=self.settings.retries,
             progress=segment_progress,
         )
+        self.download_seconds += time.time() - download_started
         if not result.ok:
             return False, result.error
         self.bytes_done += result.size

@@ -66,6 +66,10 @@ class RateLimited(StreamError):
         self.retry_after = retry_after
 
 
+class NetworkError(StreamError):
+    """DNS/connection blip — retry the request, never kill a long run."""
+
+
 _LIMIT_RE = re.compile(r"limit of (\d+) video requests in the last (\d+) hour", re.I)
 
 
@@ -196,9 +200,12 @@ class StreamClient:
         headers = dict(BROWSER_HEADERS)
         if accept:
             headers["Accept"] = accept
-        response = await self._session.get(
-            url, headers=headers, cookies=self.cookies, timeout=self.timeout
-        )
+        try:
+            response = await self._session.get(
+                url, headers=headers, cookies=self.cookies, timeout=self.timeout
+            )
+        except Exception as exc:  # curl_cffi DNSError / ConnectionError / timeout
+            raise NetworkError(f"{type(exc).__name__}: {str(exc).splitlines()[0][:160]}") from exc
         self.last_headers = dict(response.headers)
         return response.status_code, response.text
 

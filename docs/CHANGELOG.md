@@ -66,3 +66,13 @@ Newest first. One line per user-visible change.
 - `DownloadRunner` also paces itself: at most `videos_per_hour` (default 18) `video-url-details`
   calls per rolling hour, with the timestamps persisted in `state/video_requests.json`, so a
   restarted run does not waste a request on a 429.
+## 2026-10-26 — network blips must not kill a run
+
+- `curl_cffi` raises `DNSError`/`ConnectionError` outside the `StreamError` family, so a single
+  DNS hiccup crashed a 6 hour video run (observed after video #21: "Could not resolve host").
+  `StreamClient.get_text` now wraps those into `stream.NetworkError`, and the runner retries the
+  same item with 30s → 300s backoff (4 tries) before marking it failed.
+- Any other unexpected exception for one item is now caught per item, so the rest of the queue
+  keeps going instead of the whole process dying.
+- Reported MB/s is now measured over download time only; long quota waits no longer show up as
+  "0.02 MB/s".
