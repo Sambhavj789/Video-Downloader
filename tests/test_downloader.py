@@ -9,8 +9,9 @@ from vd.config import Settings
 from vd.downloader import DownloadRunner
 
 
-def _runner(tmp_path, per_hour=18):
-    settings = Settings(output_root=str(tmp_path), videos_per_hour=per_hour)
+def _runner(tmp_path, per_hour=18, per_day=45):
+    settings = Settings(output_root=str(tmp_path), videos_per_hour=per_hour,
+                        videos_per_day=per_day)
     return DownloadRunner(settings, {}, {"key": "k"}, quota_file=tmp_path / "quota.json")
 
 
@@ -52,6 +53,79 @@ def test_old_requests_fall_out_of_the_window(tmp_path):
 
     runner._sleep = boom
     asyncio.run(runner.wait_for_video_slot())
+
+
+def test_daily_quota_makes_the_runner_wait_a_day(tmp_path):
+    """The site also caps at 50 video requests per 24 hours (hit on 27-Oct 01:29)."""
+    runner = _runner(tmp_path, per_hour=1000, per_day=3)
+    now = time.time()
+    # spread over the day, so the hourly window is not the reason for the wait
+    runner.video_times.extend([now - 4000, now - 3000, now - 2000])
+
+    waits: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+        runner.video_times.clear()  # the day "passes"
+
+    runner._sleep = fake_sleep
+    asyncio.run(runner.wait_for_video_slot())
+
+    assert waits, "runner should have waited for the 24h window"
+    assert waits[0] > 19 * 3600  # the oldest request must age out of the 24h window
+
+
+def test_requests_older_than_a_day_do_not_block(tmp_path):
+    runner = _runner(tmp_path, per_hour=1000, per_day=1)
+    runner.video_times.append(time.time() - 86401)
+
+    async def boom(seconds: float) -> None:  # pragma: no cover - should not run
+        raise AssertionError("a day-old request frees the daily slot")
+
+    runner._sleep = boom
+    asyncio.run(runner.wait_for_video_slot())
+
+
+def test_a_429_request_is_not_counted_against_the_quota(tmp_path):
+    """Only real requests eat the 50/24h budget; a 429 must not burn a slot."""
+    runner = _runner(tmp_path)
+    runner.note_video_request()
+    assert len(runner.video_times) == 1
+    runner.forget_video_request()
+    assert len(runner.video_times) == 0
+
+def test_rate_limit_never_drops_the_video(tmp_path):
+    """A daily reset can be 19 hours away - the item must survive many 429s."""
+    from vd.stream import RateLimited
+
+    runner = _runner(tmp_path)
+    calls = {"n": 0}
+
+    async def fake_video(stream, item, index, total):
+        calls["n"] += 1
+        if calls["n"] <= 5:
+            raise RateLimited("daily limit", 3600, window=86400)
+        return True, ""
+
+    async def no_sleep(seconds):
+        return None
+
+    runner._download_video = fake_video
+    runner._sleep = no_sleep
+    ok, error = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
+    assert ok is True and error == ""
+    assert calls["n"] == 6
+
+
+def test_daily_rate_limit_polls_every_hour(tmp_path):
+    """A 24h quota frees slots one by one, so waiting a full day would be wrong."""
+    from vd.stream import RateLimited
+
+    runner = _runner(tmp_path)
+    assert runner._rate_wait(RateLimited("x", 3600, window=86400)) == 3600
+    assert runner._rate_wait(RateLimited("x", 3600, window=3600)) == 3600
+    assert runner._rate_wait(RateLimited("x", 120, window=3600)) == 120
+
 
 def test_saved_window_survives_a_restart(tmp_path):
     """The quota file is what stops a restarted run from burning the hour again."""
@@ -111,7 +185,7 @@ def test_rate_limit_waits_then_retries_the_same_item(tmp_path):
     ok, _ = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
     assert ok is True
     assert waits == [60]
-    assert len(runner.video_times) == 1
+    assert len(runner.video_times) == 0  # the fake never made a request, and a 429 burns no slot
 
 
 def test_repeated_network_errors_give_up_eventually(tmp_path):

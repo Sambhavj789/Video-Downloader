@@ -48,16 +48,44 @@ class DownloadRunner:
         self.video_times: deque[float] = deque()
         self._load_window()
 
-    # -- hourly video quota --------------------------------------------------
+    # -- video quota (20/hour and 50/24h on the site) -------------------------
     @property
     def videos_per_hour(self) -> int:
         """The API allows 20 ``video-url-details`` calls/hour; stay under it."""
         return max(1, int(getattr(self.settings, "videos_per_hour", 18) or 18))
 
+    @property
+    def videos_per_day(self) -> int:
+        """The API also allows only 50 ``video-url-details`` calls/24h."""
+        return max(1, int(getattr(self.settings, "videos_per_day", 45) or 45))
+
     def _trim_window(self) -> None:
-        cutoff = time.time() - 3600
+        """Keep a full day of timestamps - the 24h limit needs them."""
+        cutoff = time.time() - 86400
         while self.video_times and self.video_times[0] < cutoff:
             self.video_times.popleft()
+
+    def _count_since(self, seconds: float) -> int:
+        cutoff = time.time() - seconds
+        return sum(1 for value in self.video_times if value >= cutoff)
+
+    def _oldest_since(self, seconds: float) -> float:
+        cutoff = time.time() - seconds
+        for value in self.video_times:
+            if value >= cutoff:
+                return value
+        return time.time()
+
+    def note_video_request(self) -> None:
+        """One ``video-url-details`` call is about to be made - count it."""
+        self.video_times.append(time.time())
+        self._save_window()
+
+    def forget_video_request(self) -> None:
+        """The call came back 429, so the server never counted it."""
+        if self.video_times:
+            self.video_times.pop()
+            self._save_window()
 
     def _load_window(self) -> None:
         """A restarted run must still know how much of the hour is already spent."""
@@ -85,13 +113,22 @@ class DownloadRunner:
 
     async def wait_for_video_slot(self) -> None:
         self._trim_window()
-        while len(self.video_times) >= self.videos_per_hour:
-            wait = 3600 - (time.time() - self.video_times[0]) + 5
-            self.log(
-                f"[rate-limit] ghante ki limit ({self.videos_per_hour} videos/hour) bhar gayi — "
-                f"{wait / 60:.0f} min wait, phir apne aap chalu"
-            )
-            self.emit(type="pause", seconds=int(wait), reason="hourly-quota")
+        while True:
+            if self._count_since(3600) >= self.videos_per_hour:
+                oldest = self._oldest_since(3600)
+                wait = 3600 - (time.time() - oldest) + 5
+                label = f"ghante ki limit ({self.videos_per_hour} videos/hour)"
+                reason = "hourly-quota"
+            elif len(self.video_times) >= self.videos_per_day:
+                oldest = self.video_times[0]
+                wait = 86400 - (time.time() - oldest) + 5
+                label = f"24 ghante ki limit ({self.videos_per_day} videos/day)"
+                reason = "daily-quota"
+            else:
+                return
+            wait = max(wait, 60.0)
+            self.log(f"[rate-limit] {label} bhar gayi — {wait / 60:.0f} min wait, phir apne aap chalu")
+            self.emit(type="pause", seconds=int(wait), reason=reason)
             await self._sleep(wait)
             if self.should_stop():
                 return
@@ -162,8 +199,6 @@ class DownloadRunner:
                     if self.should_stop():
                         self.log("stop request mila — ruk raha hoon")
                         break
-                    self.video_times.append(time.time())
-                    self._save_window()
 
                 self.emit(type="item_start", index=index, total=total, item=item)
                 try:
@@ -216,18 +251,15 @@ class DownloadRunner:
             try:
                 return await self._download_video(stream, item, index, total)
             except RateLimited as exc:
+                # A quota is not a failure: wait however long it takes, never drop the video.
                 rate_tries += 1
-                if rate_tries > 3:
-                    return False, str(exc)
-                wait = max(60.0, min(exc.retry_after, 3900.0))
+                wait = self._rate_wait(exc)
                 self.log(
                     f"[rate-limit] {exc} — {wait / 60:.0f} min wait, phir wahi video "
-                    f"(try {rate_tries}/3)"
+                    f"(try {rate_tries})"
                 )
                 self.emit(type="pause", seconds=int(wait), reason="rate-limit")
                 await self._sleep(wait)
-                self.video_times.append(time.time())
-                self._save_window()
             except NetworkError as exc:
                 net_tries += 1
                 if net_tries > 4:
@@ -236,6 +268,13 @@ class DownloadRunner:
                 self.log(f"[network] {exc} — {wait:.0f}s baad dobara (try {net_tries}/4)")
                 self.emit(type="pause", seconds=int(wait), reason="network")
                 await self._sleep(wait)
+
+    def _rate_wait(self, exc: RateLimited) -> float:
+        """Hourly quota clears within the hour; the 24h one frees slots one by one."""
+        window = float(getattr(exc, "window", 3600.0) or 3600.0)
+        if window > 3900.0:
+            return 3600.0
+        return max(60.0, min(float(exc.retry_after or 3600.0), 3900.0))
 
     async def _download_video(self, stream: StreamClient, item: dict,
                               index: int, total: int) -> tuple[bool, str]:
@@ -264,7 +303,12 @@ class DownloadRunner:
                 return False, "schedule page nahi khula"
             if not schedule.media_token:
                 return False, "MEDIA_TOKEN nahi mila"
-            video_data = await stream.video_data(schedule.media_token)
+            self.note_video_request()
+            try:
+                video_data = await stream.video_data(schedule.media_token)
+            except RateLimited:
+                self.forget_video_request()  # 429 = the server never counted it
+                raise
         except SessionExpired:
             raise
         except RateLimited:

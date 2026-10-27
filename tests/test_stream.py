@@ -112,6 +112,15 @@ def test_rate_limit_reads_the_hourly_message():
     assert exc.retry_after == 3600
 
 
+def test_rate_limit_reads_the_daily_message():
+    """The site's second quota: 50 video requests per 24 hours (hit on 27-Oct)."""
+    body = '{"message":"You have reached the daily limit of 50 video requests in 24 hours. Please try again later.","success":false}'
+    exc = stream.rate_limit(stream._json_message(body))
+    assert isinstance(exc, stream.RateLimited)
+    assert exc.window == 86400
+    assert exc.retry_after == 3600  # re-check hourly, slots free one by one
+
+
 def test_rate_limit_prefers_retry_after_header():
     exc = stream.rate_limit("slow down", {"Retry-After": "120"})
     assert exc.retry_after == 120

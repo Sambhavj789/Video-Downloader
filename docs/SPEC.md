@@ -71,9 +71,11 @@ library, PDF text extraction/OCR.
   2026-10-26: 0.35 MB/s with one `curl.exe` per segment vs 1.42 MB/s at 12-16 parallel
   requests; 24-32 workers make it slower again. `VD_SEGMENT_FETCHER=curl` brings the old
   behaviour back for debugging.
-- The API allows **20 `video-url-details` calls per hour** (`HTTP 429` says so). The runner
-  paces at `videos_per_hour` (default 18) and waits out the window instead of failing an item;
-  spent slots are kept in `state/video_requests.json` so a restart stays inside the quota.
+- The API allows **20 `video-url-details` calls per hour** *and* **50 per 24 hours** (`HTTP 429`
+  says which one). The runner paces at `videos_per_hour` (default 18) and `videos_per_day`
+  (default 45), waits out the window instead of failing an item, and keeps a full day of spent
+  slots in `state/video_requests.json` so a restart stays inside both quotas. A 24h window is
+  polled hourly because its slots free one by one.
 - Every CDN request (manifest, init, segments) must carry browser headers
   (`dash.CDN_HEADERS`: Chrome UA, `Origin`/`Referer` of the site) — Cloudflare answers 403
   to library user agents, which looks like an expired session but is not.

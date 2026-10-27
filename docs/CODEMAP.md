@@ -57,7 +57,7 @@ Symbol-level ownership. Line numbers are omitted on purpose; search the symbol.
 | `tests/test_proxy.py` | pagination, durations, link round-trip, catalog summary |
 | `tests/test_server.py` | API handlers, job events, one real HTTP round-trip |
 | `tests/test_report.py` | markdown reports (summary, pipe escaping, library status) |
-| `tests/test_downloader.py` | hourly video quota pacing, rate-limit retry, network-blip retry |
+| `tests/test_downloader.py` | hourly + daily video quota pacing, rate-limit retry, network-blip retry |
 
 ## Symbols
 

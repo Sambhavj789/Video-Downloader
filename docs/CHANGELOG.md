@@ -8,7 +8,21 @@ updated: 2026-10-26
 
 Newest first. One line per user-visible change.
 
-## 2026-10-26 — downloads actually run (CDN headers)
+## 2026-10-27 - daily quota (50/24h) + quota misses never fail a video
+
+- The site has a **second** limit: `You have reached the daily limit of 50 video requests in
+  24 hours`. `_LIMIT_RE` only knew "in the last N hour", so the daily 429 was treated as an
+  hourly wait *and* the third 429 marked the video failed — a night lost after GST Part 05.
+- `stream.rate_limit` now reads both windows and sets `RateLimited.window` (3600 / 86400);
+  a 24h limit is **polled hourly** (slots free one by one) instead of sleeping a day.
+- `DownloadRunner` paces on **two** windows: `videos_per_hour` 18 and `videos_per_day` 45,
+  keeping a full day of timestamps in `state/video_requests.json`.
+- A 429 no longer counts against the budget (`note_video_request` / `forget_video_request`),
+  and `RateLimited` retries are **unbounded** — quota is a pause, never a failure.
+- `state/video_requests.json` was seeded from the 49 `.mp4` mtimes of the last 24h (the server
+  said 50 requests), so the run waits for the real reset (~20:34) instead of poking the API.
+
+## 2026-10-26 - downloads actually run (CDN headers)
 
 - Video download was failing at the first step (`MPD HTTP 403`): the manifest and every
   segment were fetched with a library user agent, which Cloudflare rejects. Manifest,

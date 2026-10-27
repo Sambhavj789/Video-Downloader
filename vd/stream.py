@@ -58,36 +58,45 @@ class SessionExpired(StreamError):
 
 
 class RateLimited(StreamError):
-    """The API's hourly video-url quota is gone (``HTTP 429``): *wait*, don't fail."""
+    """A video-url quota is gone (``HTTP 429``): *wait*, don't fail."""
 
-    def __init__(self, detail: str = "", retry_after: float = 3600.0):
+    def __init__(self, detail: str = "", retry_after: float = 3600.0, window: float = 3600.0):
         super().__init__(detail or "rate limited")
         self.detail = detail
         self.retry_after = retry_after
+        self.window = window  # 3600 = hourly quota, 86400 = daily quota
 
 
 class NetworkError(StreamError):
     """DNS/connection blip — retry the request, never kill a long run."""
 
 
-_LIMIT_RE = re.compile(r"limit of (\d+) video requests in the last (\d+) hour", re.I)
+_LIMIT_RE = re.compile(
+    r"limit of (\d+) (?:video )?requests? in (?:the last )?(\d+) (hour|hours|day|days)", re.I
+)
 
 
 def rate_limit(message: str, headers: dict | None = None) -> RateLimited:
-    """Build the exception, preferring the server's own reset window."""
-    wait = 3600.0
+    """Build the exception, preferring the server's own reset window.
+
+    The site has *two* quotas: 20 requests/hour and 50 requests/24 hours. A 24h
+    window does not clear in one go (slots free one by one), so we re-check hourly
+    instead of sleeping a whole day.
+    """
+    message = message or ""
+    window = 3600.0
+    match = _LIMIT_RE.search(message)
+    if match:
+        unit = match.group(3).lower()
+        window = float(match.group(2)) * (86400.0 if unit.startswith("day") else 3600.0)
+    wait = window if window <= 3900.0 else 3600.0
     raw = str((headers or {}).get("Retry-After") or "").strip()
     if raw:
         try:
             wait = float(raw)
         except ValueError:
             pass
-    else:
-        match = _LIMIT_RE.search(message or "")
-        if match:
-            # "in the last 1 hour" -> the window is that long, so wait for the oldest slot.
-            wait = float(match.group(2)) * 3600.0
-    return RateLimited(message, max(60.0, min(wait, 3900.0)))
+    return RateLimited(message, max(60.0, min(wait, 3900.0)), window=max(60.0, window))
 
 
 def _json_message(body: str) -> str:
