@@ -127,6 +127,23 @@ def test_daily_rate_limit_polls_every_hour(tmp_path):
     assert runner._rate_wait(RateLimited("x", 120, window=3600)) == 120
 
 
+def test_cli_waits_for_the_drive_before_planning(tmp_path, monkeypatch):
+    """Without G: every file looks missing - a run must wait, not re-plan the whole library."""
+    from vd import cli
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: sleeps.append(seconds))
+    seen = {"n": 0}
+
+    def fake_exists(path):
+        seen["n"] += 1
+        return seen["n"] > 2
+
+    cli._wait_for_output_root(str(tmp_path / "lib"), interval=1, exists=fake_exists)
+    assert seen["n"] == 3
+    assert sleeps == [1, 1]
+
+
 def test_saved_window_survives_a_restart(tmp_path):
     """The quota file is what stops a restarted run from burning the hour again."""
     import json

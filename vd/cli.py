@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 from . import auth, links, names, plan as plan_mod, report, state
@@ -197,9 +198,30 @@ def cmd_status(args) -> int:
     return 0
 
 
+def _wait_for_output_root(output_root: str, *, interval: float = 60.0, exists=None) -> None:
+    """Never plan against a missing drive.
+
+    Without ``G:`` every file looks missing, so a run would announce 161 "missing" AA
+    videos and start re-downloading the whole library. Wait for the drive instead.
+    """
+    try:
+        anchor = Path(output_root).anchor
+    except (OSError, ValueError):  # pragma: no cover - defensive
+        return
+    if not anchor:
+        return
+    root = Path(anchor)
+    check = exists or (lambda path: path.exists())
+    while not check(root):
+        print(f"[drive] {anchor} nahi mil raha — drive lagao, main {interval:.0f}s par check karta "
+              f"rahunga (Ctrl+C se rukega).", flush=True)
+        time.sleep(interval)
+
+
 def cmd_download(args) -> int:
     ensure_dirs()
     settings = _settings()
+    _wait_for_output_root(settings.output_root)
     cookies = auth.load_cookies()
     if not cookies:
         raise SystemExit("cookies nahi mile — download ke liye session chahiye (python -m vd session save <file>).")

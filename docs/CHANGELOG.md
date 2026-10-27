@@ -21,6 +21,9 @@ Newest first. One line per user-visible change.
   and `RateLimited` retries are **unbounded** — quota is a pause, never a failure.
 - `state/video_requests.json` was seeded from the 49 `.mp4` mtimes of the last 24h (the server
   said 50 requests), so the run waits for the real reset (~20:34) instead of poking the API.
+- `vd download` now refuses to plan while the library drive is missing (`_wait_for_output_root`):
+  without `G:` every file "looked missing", so a run announced 161 AA videos and would have
+  re-downloaded the library. It waits and prints `[drive] G:\ nahi mil raha` instead.
 
 ## 2026-10-26 - downloads actually run (CDN headers)
 
