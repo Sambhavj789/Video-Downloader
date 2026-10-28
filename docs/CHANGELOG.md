@@ -8,6 +8,16 @@ updated: 2026-10-26
 
 Newest first. One line per user-visible change.
 
+## 2026-10-28 - laptop sleep / internet drop no longer kills videos
+
+- 27-Oct night the laptop slept between 05:34 and 10:16 and **30 GST videos were marked
+  failed** with `DNSError: Could not resolve host` (four quick retries ≈ 7 minutes is not
+  enough for a sleep). `DownloadRunner.wait_for_network` now pauses the run every 2 minutes
+  until `stream.testuk.org` resolves *and* accepts a TCP connection, then retries the same
+  video — an internet outage is a pause, never a failure (same rule as the quota).
+- `tests/test_downloader.py`: one test for "waits then finishes the video", and the give-up
+  test now stubs the stop path.
+
 ## 2026-10-27 - daily quota (50/24h) + quota misses never fail a video
 
 - The site has a **second** limit: `You have reached the daily limit of 50 video requests in

@@ -218,12 +218,46 @@ def test_repeated_network_errors_give_up_eventually(tmp_path):
     async def no_sleep(seconds):
         return None
 
+    async def no_network():
+        return False  # the run was asked to stop
+
     runner._download_video = always_fail
     runner._sleep = no_sleep
+    runner.wait_for_network = no_network
     ok, error = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
     assert ok is False
     assert error.startswith("network:")
     assert calls["n"] == 5
+
+
+def test_laptop_sleep_waits_for_the_internet_instead_of_failing(tmp_path):
+    """27-Oct night: laptop slept, 30 GST videos were marked failed on DNS errors."""
+    from vd.stream import NetworkError
+
+    runner = _runner(tmp_path)
+    calls = {"n": 0}
+
+    async def flaky(stream, item, index, total):
+        calls["n"] += 1
+        if calls["n"] <= 6:
+            raise NetworkError("Could not resolve host: stream.testuk.org")
+        return True, ""
+
+    async def no_sleep(seconds):
+        return None
+
+    waited = {"n": 0}
+
+    async def net_back():
+        waited["n"] += 1
+        return True
+
+    runner._download_video = flaky
+    runner._sleep = no_sleep
+    runner.wait_for_network = net_back
+    ok, _ = asyncio.run(runner._download_item(None, {"kind": "videos"}, 1, 1))
+    assert ok is True
+    assert waited["n"] == 1  # one pause for the network, then the item was retried
 
 def test_missing_drive_makes_the_runner_wait_instead_of_failing(tmp_path):
     """G: has dropped twice; the runner must wait for it, not burn quota on unwritable targets."""

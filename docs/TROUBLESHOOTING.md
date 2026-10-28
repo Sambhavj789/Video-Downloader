@@ -52,6 +52,7 @@ Never paste cookie values into an issue, a doc or a commit.
 | `G:` folder "Cannot find drive" mid-run | external drive holding the library disconnected | reconnect the drive, rerun the same command (finished files are skipped) |
 | `vd download` bolta hai `[drive] G:\ nahi mil raha` | drive hi nahi lagi, isliye plan me sab files "missing" dikhengi | drive lagao — run khud shuru ho jayega (guard added 2026-10-27, pehle wo poora library re-download karne chalta tha) |
 | `ffmpeg fail (1): ...` | bad local MPD or incomplete segments | `python -m vd clean`, retry; check the stderr tail in the UI log |
+| `DNSError: Could not resolve host` | laptop slept / WiFi ya VPN gaya | nothing to fix — runner har 2 min par check karta hai aur internet aate hi wahi video continue karta hai (2026-10-28 se pehle 4 retry ke baad video fail ho jati thi) |
 | `.part` files left behind | process killed mid-download | safe to delete; a rerun re-downloads that file |
 | `FileNotFoundError: … Notes\…pdf.part` | target path longer than 260 characters (long site titles) | fixed via `names.fs_path`; if it returns, check that writes use `fs_path` not `Path.write_bytes` |
 | Download stops by itself with `Session expired` | cookies expired mid-run | refresh session, rerun (finished items are skipped) |

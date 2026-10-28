@@ -9,14 +9,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import time
 from collections import deque
 from pathlib import Path
 from typing import Callable
+from urllib.parse import urlparse
 
 from . import dash, names, state
 from .config import STATE_DIR, TEMP_DIR, free_space_gb
-from .stream import NetworkError, RateLimited, SessionExpired, StreamClient, StreamError
+from .stream import STREAM_BASE, NetworkError, RateLimited, SessionExpired, StreamClient, StreamError
 
 EventFn = Callable[[dict], None]
 StopFn = Callable[[], bool]
@@ -133,6 +135,34 @@ class DownloadRunner:
             if self.should_stop():
                 return
             self._trim_window()
+
+    async def wait_for_network(self) -> bool:
+        """Laptop slept / WiFi dropped: wait for the site to resolve, don't fail 30 videos.
+
+        Returns False only when the run was asked to stop.
+        """
+        host = urlparse(STREAM_BASE).hostname or ""
+        while True:
+            if self.should_stop():
+                return False
+            try:
+                socket.getaddrinfo(host, 443)
+                if self._host_reachable(host):
+                    self.log("[network] internet wapas aa gaya — continue")
+                    return True
+            except OSError:
+                pass
+            self.log(f"[network] {host} resolve nahi ho raha (internet down?) — 2 min par check")
+            self.emit(type="pause", seconds=120, reason="network")
+            await self._sleep(120)
+
+    @staticmethod
+    def _host_reachable(host: str, port: int = 443, timeout: float = 5.0) -> bool:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                return True
+        except OSError:
+            return False
 
     def _target_exists(self, root: Path) -> bool:
         try:
@@ -263,7 +293,12 @@ class DownloadRunner:
             except NetworkError as exc:
                 net_tries += 1
                 if net_tries > 4:
-                    return False, f"network: {exc}"
+                    # Four quick retries failed: treat it as "no internet" and wait it out
+                    # instead of burning the rest of the queue (laptop sleep = 30 lost videos).
+                    if not await self.wait_for_network():
+                        return False, f"network: {exc}"
+                    net_tries = 1
+                    continue
                 wait = min(30.0 * (2 ** (net_tries - 1)), 300.0)
                 self.log(f"[network] {exc} — {wait:.0f}s baad dobara (try {net_tries}/4)")
                 self.emit(type="pause", seconds=int(wait), reason="network")
