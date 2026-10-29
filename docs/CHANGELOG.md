@@ -10,21 +10,28 @@ Newest first. One line per user-visible change.
 
 ## 2026-10-29 - library audit + 5xx retries
 
-- **All videos are local now: 719 `.mp4`** (663 old + 56 new). GST is complete (65/66 — the
-  one gap is `Payment of Tax 04 || Video Only`, the site answers 400/503 for it).
-- Full integrity audit (`ffprobe` on 719 files + start/mid/end decode of every file):
+- **Every catalogued video is local: 720 `.mp4`, 0 missing in all 7 subjects** (AA 161,
+  Audit 68, Law 96, Cost 130, FM 110, Taxation 88, **GST 66/66** — `Payment of Tax 04 ||
+  Video Only` came through on a later attempt). The 719th file is the legacy
+  `Chapter-7.mp4`, which no catalog lists.
+- Full integrity audit (`ffprobe` on every file + start/mid/end decode + duration vs the
+  site's `duration_s`):
   - **5 Law videos were genuinely damaged** (h264 `top block unavailable for requested intra
-    mode` mid-file, from the June 2026 batch) — quarantined for a re-download.
+    mode` mid-file, June 2026 batch).
+  - **4 videos were truncated** — caught only by comparing duration with the site:
+    `Prospectus and Allotment of Securities 01` (51 of 133 min!), `Cost Accounting System 01`
+    (48/86), `Cost Accounting System 03` (90/104), `Ethics and Terms of Audit Engagement 04`
+    (112/117). All four re-downloaded and now match the site to the second.
   - **42 files** (Law + Cost, June 2026) have a truncated *last AAC frame*
     (`decode_band_types: Input buffer exhausted`). Audio and video durations are identical,
     so playback is unaffected — left alone.
-  - Everything downloaded by this tool (GST 65, AA 39, Cost 1) decodes clean.
+  - Everything this tool downloaded decodes clean.
+- Re-download policy: the damaged copy is renamed to `<name>.mp4.corrupt` (never deleted),
+  the new copy is verified against the site's duration, and only then is the backup removed.
+  If the download fails the old playable copy goes back, so the library never has a hole.
 - `schedule-details`/`video-url-details` now retry on **5xx** as well as 429
-  (`_RETRYABLE_RE`): the site answers 500/503 for older Law videos and one bad response
-  used to fail the video outright. Both calls retry 4 times (10/20/30s apart).
-- `state/retry-law.log`: a watcher probes the site every 10 min (max 3h) and re-downloads
-  those 5 Law videos the moment it serves them; if the download still fails the old
-  playable copy is restored, so the library never has a hole.
+  (`_RETRYABLE_RE`): the site answers 500/503 for some videos and one bad response used to
+  fail the video outright. Both calls retry 4 times (10/20/30s apart).
 
 ## 2026-10-28 - laptop sleep / internet drop no longer kills videos
 
