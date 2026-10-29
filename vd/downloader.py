@@ -322,7 +322,7 @@ class DownloadRunner:
             return False, "schedule id nahi hai"
         try:
             schedule = None
-            for attempt in range(3):
+            for attempt in range(4):
                 try:
                     schedule = await stream.schedule(
                         self.record["batch_id"], self.record["subject_id"], schedule_id
@@ -336,7 +336,7 @@ class DownloadRunner:
                     raise
                 except StreamError as exc:
                     # 429 = quota, 5xx = site hiccup: both are worth another look.
-                    if attempt == 2 or not _RETRYABLE_RE.search(str(exc)):
+                    if attempt == 3 or not _RETRYABLE_RE.search(str(exc)):
                         return False, str(exc)
                     await asyncio.sleep(10 * (attempt + 1))
             if schedule is None:
@@ -344,11 +344,24 @@ class DownloadRunner:
             if not schedule.media_token:
                 return False, "MEDIA_TOKEN nahi mila"
             self.note_video_request()
-            try:
-                video_data = await stream.video_data(schedule.media_token)
-            except RateLimited:
-                self.forget_video_request()  # 429 = the server never counted it
-                raise
+            video_data = None
+            for attempt in range(4):
+                try:
+                    video_data = await stream.video_data(schedule.media_token)
+                    break
+                except RateLimited:
+                    self.forget_video_request()  # 429 = the server never counted it
+                    raise
+                except SessionExpired:
+                    raise
+                except NetworkError:
+                    raise
+                except StreamError as exc:
+                    if attempt == 3 or not _RETRYABLE_RE.search(str(exc)):
+                        return False, str(exc)
+                    await asyncio.sleep(10 * (attempt + 1))
+            if video_data is None:
+                return False, "video-url-details nahi mila"
         except SessionExpired:
             raise
         except RateLimited:

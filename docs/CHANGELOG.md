@@ -21,7 +21,7 @@ Newest first. One line per user-visible change.
   - Everything downloaded by this tool (GST 65, AA 39, Cost 1) decodes clean.
 - `schedule-details`/`video-url-details` now retry on **5xx** as well as 429
   (`_RETRYABLE_RE`): the site answers 500/503 for older Law videos and one bad response
-  used to fail the video outright.
+  used to fail the video outright. Both calls retry 4 times (10/20/30s apart).
 - `state/retry-law.log`: a watcher probes the site every 10 min (max 3h) and re-downloads
   those 5 Law videos the moment it serves them; if the download still fails the old
   playable copy is restored, so the library never has a hole.
