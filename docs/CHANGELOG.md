@@ -8,6 +8,24 @@ updated: 2026-10-26
 
 Newest first. One line per user-visible change.
 
+## 2026-10-29 - library audit + 5xx retries
+
+- **All videos are local now: 719 `.mp4`** (663 old + 56 new). GST is complete (65/66 — the
+  one gap is `Payment of Tax 04 || Video Only`, the site answers 400/503 for it).
+- Full integrity audit (`ffprobe` on 719 files + start/mid/end decode of every file):
+  - **5 Law videos were genuinely damaged** (h264 `top block unavailable for requested intra
+    mode` mid-file, from the June 2026 batch) — quarantined for a re-download.
+  - **42 files** (Law + Cost, June 2026) have a truncated *last AAC frame*
+    (`decode_band_types: Input buffer exhausted`). Audio and video durations are identical,
+    so playback is unaffected — left alone.
+  - Everything downloaded by this tool (GST 65, AA 39, Cost 1) decodes clean.
+- `schedule-details`/`video-url-details` now retry on **5xx** as well as 429
+  (`_RETRYABLE_RE`): the site answers 500/503 for older Law videos and one bad response
+  used to fail the video outright.
+- `state/retry-law.log`: a watcher probes the site every 10 min (max 3h) and re-downloads
+  those 5 Law videos the moment it serves them; if the download still fails the old
+  playable copy is restored, so the library never has a hole.
+
 ## 2026-10-28 - laptop sleep / internet drop no longer kills videos
 
 - 27-Oct night the laptop slept between 05:34 and 10:16 and **30 GST videos were marked

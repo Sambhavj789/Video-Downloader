@@ -144,6 +144,16 @@ def test_cli_waits_for_the_drive_before_planning(tmp_path, monkeypatch):
     assert sleeps == [1, 1]
 
 
+def test_confirmation_page_retries_site_5xx(tmp_path):
+    """27-Oct: `schedule-details HTTP 503` failed a video that just needed a retry."""
+    from vd.downloader import _RETRYABLE_RE
+
+    assert _RETRYABLE_RE.search("schedule-details HTTP 503")
+    assert _RETRYABLE_RE.search("video-url-details HTTP 429")
+    assert _RETRYABLE_RE.search("HTTP 502")
+    assert not _RETRYABLE_RE.search("schedule-details HTTP 404")
+
+
 def test_saved_window_survives_a_restart(tmp_path):
     """The quota file is what stops a restarted run from burning the hour again."""
     import json

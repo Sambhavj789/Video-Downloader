@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import socket
 import time
 from collections import deque
@@ -19,6 +20,9 @@ from urllib.parse import urlparse
 from . import dash, names, state
 from .config import STATE_DIR, TEMP_DIR, free_space_gb
 from .stream import STREAM_BASE, NetworkError, RateLimited, SessionExpired, StreamClient, StreamError
+
+# 429 = quota, 5xx = the site is having a moment; both deserve a retry.
+_RETRYABLE_RE = re.compile(r"\b(429|500|502|503|504)\b")
 
 EventFn = Callable[[dict], None]
 StopFn = Callable[[], bool]
@@ -331,7 +335,8 @@ class DownloadRunner:
                 except NetworkError:
                     raise
                 except StreamError as exc:
-                    if attempt == 2 or "429" not in str(exc):
+                    # 429 = quota, 5xx = site hiccup: both are worth another look.
+                    if attempt == 2 or not _RETRYABLE_RE.search(str(exc)):
                         return False, str(exc)
                     await asyncio.sleep(10 * (attempt + 1))
             if schedule is None:
